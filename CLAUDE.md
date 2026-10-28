@@ -45,6 +45,9 @@ Evaluado y pospuesto. Conclusiones:
 ## Features pendientes (README: "/" incompleto)
 
 - **Viewing Props, Scenery, Live scenes** — props (`pfb_chr_prop*`) y escenarios (`3d/env/.../pfb_*`, `cutt/cutt_son*`) se cargan instanciando el prefab tal cual (`UmaContainerProp.LoadProp`), sin ajuste de shaders/iluminación; `LoadAssetPath` reporta scripts faltantes del juego.
+  - Hecho (commits `13ce473`, `34c35cb`): props aparecen junto a la uma con gizmo magenta (`UIHandleProp`, en Pose Mode): Reset, Attach a mano derecha/izquierda (`Hand_Attach_R/L`, los props ya están modelados para ese hueso, sin offset), Detach, Link/Unlink a la animación actual. Vínculos en `PropAnimationLinks.json` (raíz del proyecto en el Editor, ignorado por git); se aplican en `UmaContainerCharacter.LoadAnimation`. Props pegados a la mano se excluyen del export de la uma.
+  - `master.mdb` no tiene relación animación↔prop (`character_prop_animation` solo describe animaciones propias de 6 props); probablemente está en los timelines de historia.
+  - Pendiente: nombres legibles de props (la lista muestra nombres de archivo); issues upstream de lives #226 (solo una uma en lives de grupo), #227 ("Gift" en pose T), #229 (faltan luces), #239 (cutin 1007 no aparece en Scenes).
 - **Exporting models** — hecho en la rama `fix/duplicate-files-pr224` (commits `3336775`, `bac4bf4`), verificado en Blender 5.2 + MMD Tools con Vodka (1008), el escenario `pfb_env_cutin1004_00_00` y el mob 8626. Cubre issues upstream #125, #186, #230:
   - Una malla legible por renderer (`GetExportMesh`), compartida por vértices/materiales/morphs; `MakeReadableMeshCopy` copia todos los streams y submeshes.
   - Se ignoran renderers sin malla (partículas, líneas) y submeshes sin material (`GetExportSubMeshCount`: los mobs esconden un cuerpo entero ahí).

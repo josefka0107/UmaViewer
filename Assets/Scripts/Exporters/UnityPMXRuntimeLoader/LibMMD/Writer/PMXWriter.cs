@@ -27,12 +27,14 @@ namespace LibMMD.Writer
                 Utf8Encoding = false,
                 Encoding = Encoding.Unicode,
                 ExtraUvNumber = 3, //include uv2 and color
-                VertexIndexSize = 2,
-                TextureIndexSize = 1,
-                MaterialIndexSize = 1,
-                BoneIndexSize = 2,
-                MorphIndexSize = 2,
-                RigidBodyIndexSize = 2
+                // Index sizes must fit the element counts, or indices silently wrap
+                // (scenes easily exceed 65535 vertices or 127 textures/materials).
+                VertexIndexSize = GetVertexIndexSize(model.Vertices.Length),
+                TextureIndexSize = GetIndexSize(model.TextureList.Count),
+                MaterialIndexSize = GetIndexSize(model.Parts.Length),
+                BoneIndexSize = Math.Max(2, GetIndexSize(model.Bones.Length)),
+                MorphIndexSize = Math.Max(2, GetIndexSize(model.Morphs.Length)),
+                RigidBodyIndexSize = Math.Max(2, GetIndexSize(model.Rigidbodies.Length))
             };
 
             PMXEntryItem.Element baseElement = new PMXEntryItem.Element();
@@ -412,6 +414,20 @@ namespace LibMMD.Writer
             }
 
             MMDReaderWriteUtil.WriteSizedString(writer, material.MetaInfo, encoding);
+        }
+
+        // PMX vertex indices are unsigned. Size 1 is skipped because WriteIndex writes it as sbyte.
+        private static int GetVertexIndexSize(int count)
+        {
+            return count <= ushort.MaxValue ? 2 : 4;
+        }
+
+        // Texture/material/bone/morph/rigidbody indices are signed (-1 means none).
+        private static int GetIndexSize(int count)
+        {
+            if (count <= sbyte.MaxValue) return 1;
+            if (count <= short.MaxValue) return 2;
+            return 4;
         }
 
         private static int GetTextureIndex(MMDTexture texture, List<MMDTexture> textureList)

@@ -114,7 +114,7 @@ public class UISettingsModel : MonoBehaviour
         var prop_container = Builder.CurrentOtherContainer;
         if (prop_container)
         {
-            var path = StandaloneFileBrowser.SaveFilePanel("Save PMX File", Config.Instance.MainPath, $"{prop_container}", "pmx");
+            var path = StandaloneFileBrowser.SaveFilePanel("Save PMX File", Config.Instance.MainPath, prop_container.gameObject.name, "pmx");
             if (!string.IsNullOrEmpty(path))
             {
                 ModelExporter.ExportModel(prop_container, path);

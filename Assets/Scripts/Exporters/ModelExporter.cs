@@ -37,14 +37,13 @@ public class ModelExporter
 
             var textures = TextureExporter.ExportAllTexture(Path.GetDirectoryName(path), container.gameObject);
             var model = ReadPMXModel(container, textures, container.CharaEntry);
-
-            FileStream fileStream = new FileStream(path, FileMode.Create);
-            BinaryWriter writer = new BinaryWriter(fileStream);
-            var config = new ModelConfig() { GlobalToonPath = "Toon" };
-            PMXWriter.Write(writer, model, config);
-
-            writer.Close();
-            fileStream.Close();
+            WritePMX(model, path);
+        }
+        catch (Exception e)
+        {
+            Debug.LogException(e);
+            UmaViewerUI.Instance.ShowMessage($"PMX Export Failed : {e.Message}", UIMessageType.Error);
+            return;
         }
         finally
         {
@@ -57,19 +56,48 @@ public class ModelExporter
 
     public static void ExportModel(UmaContainer container, string path)
     {
-
-        var textures = TextureExporter.ExportAllTexture(Path.GetDirectoryName(path), container.gameObject);
-        var model = ReadPMXModel(container, textures);
-
-        FileStream fileStream = new FileStream(path, FileMode.Create);
-        BinaryWriter writer = new BinaryWriter(fileStream);
-        var config = new ModelConfig() { GlobalToonPath = "Toon" };
-        PMXWriter.Write(writer, model, config);
-
-        writer.Close();
-        fileStream.Close();
+        try
+        {
+            var textures = TextureExporter.ExportAllTexture(Path.GetDirectoryName(path), container.gameObject);
+            var model = ReadPMXModel(container, textures);
+            WritePMX(model, path);
+        }
+        catch (Exception e)
+        {
+            Debug.LogException(e);
+            UmaViewerUI.Instance.ShowMessage($"PMX Export Failed : {e.Message}", UIMessageType.Error);
+            return;
+        }
 
         UmaViewerUI.Instance.ShowMessage($"PMX Save at {path}", UIMessageType.Success);
+    }
+
+    /// <summary> Writes to a temp file first so a failed export never leaves a truncated .pmx behind. </summary>
+    private static void WritePMX(RawMMDModel model, string path)
+    {
+        string tempPath = path + ".tmp";
+        try
+        {
+            using (var fileStream = new FileStream(tempPath, FileMode.Create))
+            using (var writer = new BinaryWriter(fileStream))
+            {
+                var config = new ModelConfig() { GlobalToonPath = "Toon" };
+                PMXWriter.Write(writer, model, config);
+            }
+
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+            File.Move(tempPath, path);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
     }
 
     public static RawMMDModel ReadPMXModel(UmaContainer container, string[] textures, CharaEntry entry = null)
@@ -133,11 +161,24 @@ public class ModelExporter
             }
         }
 
+        //Resolve one readable mesh per renderer so vertices, materials and morphs all read the same data.
+        //Renderers without a mesh (particles, lines, trails...) are skipped.
+        List<Renderer> renderers = new List<Renderer>();
+        Dictionary<Renderer, Mesh> meshes = new Dictionary<Renderer, Mesh>();
+        foreach (Renderer renderer in container.GetComponentsInChildren<Renderer>())
+        {
+            var mesh = GetExportMesh(renderer);
+            if (mesh != null)
+            {
+                renderers.Add(renderer);
+                meshes[renderer] = mesh;
+            }
+        }
+
         //Read vertices And triangles
-        List<Renderer> renderers = new List<Renderer>(container.GetComponentsInChildren<Renderer>());
         List<int> triangles = new List<int>();
         // Pass exportBones to ReadVerticesAndTriangles so it knows valid bones
-        model.Vertices = ReadVerticesAndTriangles(renderers, exportBones, ref triangles, container.transform);
+        model.Vertices = ReadVerticesAndTriangles(renderers, meshes, exportBones, ref triangles, container.transform);
         model.TriangleIndexes = triangles.ToArray();
 
         //Read Texture reference
@@ -146,18 +187,49 @@ public class ModelExporter
             model.TextureList.Add(new MMDTexture(texture));
         }
 
-        model.Parts = ReadPartMaterials(renderers, model);
+        model.Parts = ReadPartMaterials(renderers, meshes, model);
         model.Bones = ReadBones(exportBones);
         if(container is UmaContainerCharacter chara)
         {
             ClearBlendShape(chara);
             AddBlendShape(chara);
         }
-        model.Morphs = ReadMorph(renderers);
+        model.Morphs = ReadMorph(renderers, meshes);
         model.Rigidbodies = new MMDRigidBody[0];
         model.Joints = new MMDJoint[0];
 
         return model;
+    }
+
+    /// <summary> Returns a readable mesh for the renderer, or null if it has nothing exportable. </summary>
+    private static Mesh GetExportMesh(Renderer renderer)
+    {
+        Mesh mesh = null;
+        if (renderer is MeshRenderer)
+        {
+            var meshfilter = renderer.GetComponent<MeshFilter>();
+            mesh = meshfilter ? meshfilter.sharedMesh : null;
+        }
+        else if (renderer is SkinnedMeshRenderer smr)
+        {
+            mesh = smr.sharedMesh;
+        }
+
+        if (mesh == null || mesh.isReadable)
+        {
+            return mesh;
+        }
+
+        try
+        {
+            return MakeReadableMeshCopy(mesh);
+        }
+        catch (Exception e)
+        {
+            Debug.LogException(e);
+            UmaViewerUI.Instance.ShowMessage($"Export {mesh.name} Failed : Mesh is not readable", UIMessageType.Error);
+            return null;
+        }
     }
 
     public static Vector3[] Vec4ToVec3(Vector4[] vector4s)
@@ -292,23 +364,14 @@ public class ModelExporter
         return encoding.GetString(bytes, 0, maxBytes);
     }
 
-    private static Morph[] ReadMorph(List<Renderer> renderers)
+    private static Morph[] ReadMorph(List<Renderer> renderers, Dictionary<Renderer, Mesh> meshes)
     {
         Dictionary<string, List<VertexMorphData>> mergedMorphData = new Dictionary<string, List<VertexMorphData>>();
         int vertexOffset = 0;
 
         foreach (Renderer renderer in renderers)
         {
-            Mesh mesh;
-            if (renderer is MeshRenderer mr)
-            {
-                var meshfilter = mr.GetComponent<MeshFilter>();
-                mesh = meshfilter.mesh;
-            }
-            else
-            {
-                mesh = ((SkinnedMeshRenderer)renderer).sharedMesh;
-            }
+            Mesh mesh = meshes[renderer];
             var vertexCount = mesh.vertexCount;
 
             for (int i = 0; i < mesh.blendShapeCount; i++)
@@ -691,35 +754,23 @@ public class ModelExporter
         return pmxbones.ToArray();
     }
 
-    private static Part[] ReadPartMaterials(List<Renderer> renderers, RawMMDModel model)
+    private static Part[] ReadPartMaterials(List<Renderer> renderers, Dictionary<Renderer, Mesh> meshes, RawMMDModel model)
     {
         List<Part> parts = new List<Part>();
         int baseShift = 0;
+        MMDTexture defaultTexture = model.TextureList.Count > 0 ? model.TextureList[0] : null;
 
         foreach (Renderer renderer in renderers)
         {
-            Mesh mesh;
-            if (renderer is MeshRenderer mr)
-            {
-                var meshfilter = mr.GetComponent<MeshFilter>();
-                mesh = meshfilter.mesh;
-            }
-            else
-            {
-                mesh = ((SkinnedMeshRenderer)renderer).sharedMesh;
-            }
-            if (!mesh.isReadable)
-            {
-                continue;
-            }
+            Mesh mesh = meshes[renderer];
             var materials = new List<Material>(renderer.sharedMaterials);
             for (int i = 0; i < mesh.subMeshCount; i++)
             {
-                var material = (i < materials.Count ? materials[i] : materials[materials.Count - 1]);
+                var material = materials.Count == 0 ? null : (i < materials.Count ? materials[i] : materials[materials.Count - 1]);
                 var part = new Part();
                 var mat = new MMDMaterial();
                 part.Material = mat;
-                mat.Name = mat.NameEn = material.name.Replace(" (Instance)","");
+                mat.Name = mat.NameEn = material ? material.name.Replace(" (Instance)", "") : $"{renderer.name}_{i}";
                 mat.DiffuseColor = Color.white;
                 mat.SpecularColor = Color.clear;
                 mat.AmbientColor = Color.white * 0.5f;
@@ -729,14 +780,14 @@ public class ModelExporter
                 mat.DrawSelfShadow = true;
                 mat.EdgeColor = Color.black;
                 mat.EdgeSize = 0.4f;
-                if (material.HasProperty("_MainTex"))
+                if (material && material.HasProperty("_MainTex") && material.mainTexture)
                 {
                     var tex = model.TextureList.Find(t => t.TexturePath.Contains($"/{material.mainTexture.name}.png"));
-                    mat.Texture = (tex ?? model.TextureList[0]);
+                    mat.Texture = (tex ?? defaultTexture);
                 }
                 else
                 {
-                    mat.Texture = model.TextureList[0];
+                    mat.Texture = defaultTexture;
                 }
                 mat.MetaInfo = "";
                 part.BaseShift = baseShift + mesh.GetSubMesh(i).indexStart;
@@ -748,31 +799,17 @@ public class ModelExporter
         return parts.ToArray();
     }
 
-    private static Vertex[] ReadVerticesAndTriangles(List<Renderer> renderers, List<Transform> bones, ref List<int> triangleList, Transform root)
+    private static Vertex[] ReadVerticesAndTriangles(List<Renderer> renderers, Dictionary<Renderer, Mesh> meshes, List<Transform> bones, ref List<int> triangleList, Transform root)
     {
         List<Vertex> verticesList = new List<Vertex>();
         int vertexOffset = 0;
 
         foreach (Renderer renderer in renderers)
         {
-            if (renderer is MeshRenderer mr)
+            var mesh = meshes[renderer];
+            if (renderer is MeshRenderer)
             {
-                var meshfilter = mr.GetComponent<MeshFilter>();
                 //Cache this data to avoid copying arrays.
-                var mesh = meshfilter.mesh;
-                if (!mesh.isReadable)
-                {
-                    UmaViewerUI.Instance.ShowMessage($"Mesh {mesh.name} was not readable. Attempting to export", UIMessageType.Warning);
-                    try
-                    {
-                        mesh = MakeReadableMeshCopy(mesh);
-                    }
-                    catch
-                    {
-                        UmaViewerUI.Instance.ShowMessage($"Export {mesh.name} Failed : Mesh is not readable", UIMessageType.Error);
-                        continue;
-                    }
-                }
                 var vertices = mesh.vertices;
                 var normals = mesh.normals;
                 var uv = mesh.uv;
@@ -781,12 +818,14 @@ public class ModelExporter
                 var colors = mesh.colors;
                 var triangles = mesh.triangles;
 
+                int boneId = GetBoneIndex(bones, renderer.transform);
+
                 for (int i = 0; i < vertices.Length; i++)
                 {
                     Vertex vertex = new Vertex();
-                    vertex.Coordinate = renderer.transform.TransformPoint(vertices[i]);
-                    vertex.Normal = normals[i];
-                    vertex.UvCoordinate = new Vector2(uv[i].x, 1 - uv[i].y);
+                    vertex.Coordinate = root.InverseTransformPoint(renderer.transform.TransformPoint(vertices[i]));
+                    vertex.Normal = normals.Length > 0 ? root.InverseTransformDirection(renderer.transform.TransformDirection(normals[i])) : Vector3.up;
+                    vertex.UvCoordinate = uv.Length > 0 ? new Vector2(uv[i].x, 1 - uv[i].y) : Vector2.zero;
 
                     vertex.ExtraUvCoordinate = new Vector4[3]
                     {
@@ -796,7 +835,7 @@ public class ModelExporter
                     };
 
                     vertex.SkinningOperator = new SkinningOperator() { Type = SkinningType.SkinningBdef1 };
-                    vertex.SkinningOperator.Param = new Bdef1() { BoneId = bones.IndexOf(renderer.transform) };
+                    vertex.SkinningOperator.Param = new Bdef1() { BoneId = boneId };
                     vertex.EdgeScale = 1;
                     verticesList.Add(vertex);
                 }
@@ -810,20 +849,6 @@ public class ModelExporter
             }
             else if (renderer is SkinnedMeshRenderer smr)
             {
-                var mesh = smr.sharedMesh;
-                if (!mesh.isReadable)
-                {
-                    UmaViewerUI.Instance.ShowMessage($"Mesh {mesh.name} was not readable. Attempting to export", UIMessageType.Warning);
-                    try
-                    {
-                        mesh = MakeReadableMeshCopy(mesh);
-                    }
-                    catch
-                    {
-                        UmaViewerUI.Instance.ShowMessage($"Export {mesh.name} Failed : Mesh is not readable", UIMessageType.Error);
-                        continue;
-                    }
-                }
                 var vertices = mesh.vertices;
                 var normals = mesh.normals;
                 var uv = mesh.uv;
@@ -836,13 +861,15 @@ public class ModelExporter
                 var weights = mesh.boneWeights;
                 var bakemesh = new Mesh();
                 smr.BakeMesh(bakemesh,true);
+                // Mesh.vertices allocates a new array on every access, so read it once.
+                var bakedVertices = bakemesh.vertices;
 
                 for (int i = 0; i < vertices.Length; i++)
                 {
                     Vertex vertex = new Vertex();
-                    vertex.Coordinate = root.InverseTransformPoint(smr.transform.TransformPoint(bakemesh.vertices[i])); 
-                    vertex.Normal = normals[i];
-                    vertex.UvCoordinate = new Vector2(uv[i].x, 1 - uv[i].y);
+                    vertex.Coordinate = root.InverseTransformPoint(smr.transform.TransformPoint(bakedVertices[i]));
+                    vertex.Normal = normals.Length > 0 ? normals[i] : Vector3.up;
+                    vertex.UvCoordinate = uv.Length > 0 ? new Vector2(uv[i].x, 1 - uv[i].y) : Vector2.zero;
                     vertex.ExtraUvCoordinate = new Vector4[3]
                     {
                         uv1.Length > 0 ? new Vector2(uv1[i].x, 1 - uv1[i].y) : Vector2.zero,
@@ -941,38 +968,44 @@ public class ModelExporter
     public static Mesh MakeReadableMeshCopy(Mesh nonReadableMesh)
     {
         Mesh meshCopy = new Mesh();
+        meshCopy.name = nonReadableMesh.name;
         meshCopy.indexFormat = nonReadableMesh.indexFormat;
 
-        // Handle vertices
-        GraphicsBuffer verticesBuffer = nonReadableMesh.GetVertexBuffer(0);
-        int totalSize = verticesBuffer.stride * verticesBuffer.count;
-        byte[] data = new byte[totalSize];
-        verticesBuffer.GetData(data);
+        // Handle vertices. Attributes can be split across several streams (e.g. uv/color in stream 1),
+        // so every stream has to be copied or those attributes come back empty.
         meshCopy.SetVertexBufferParams(nonReadableMesh.vertexCount, nonReadableMesh.GetVertexAttributes());
-        meshCopy.SetVertexBufferData(data, 0, 0, totalSize);
-        verticesBuffer.Release();
-
-        // Handle triangles
-        meshCopy.subMeshCount = nonReadableMesh.subMeshCount;
-        GraphicsBuffer indexesBuffer = nonReadableMesh.GetIndexBuffer();
-        int tot = indexesBuffer.stride * indexesBuffer.count;
-        byte[] indexesData = new byte[tot];
-        indexesBuffer.GetData(indexesData);
-        meshCopy.SetIndexBufferParams(indexesBuffer.count, nonReadableMesh.indexFormat);
-        meshCopy.SetIndexBufferData(indexesData, 0, 0, tot);
-        indexesBuffer.Release();
-
-        // Restore submesh structure
-        uint currentIndexOffset = 0;
-        for (int i = 0; i < meshCopy.subMeshCount; i++)
+        for (int stream = 0; stream < nonReadableMesh.vertexBufferCount; stream++)
         {
-            uint subMeshIndexCount = nonReadableMesh.GetIndexCount(i);
-            meshCopy.SetSubMesh(i, new SubMeshDescriptor((int)currentIndexOffset, (int)subMeshIndexCount));
-            currentIndexOffset += subMeshIndexCount;
+            using (GraphicsBuffer verticesBuffer = nonReadableMesh.GetVertexBuffer(stream))
+            {
+                int totalSize = verticesBuffer.stride * verticesBuffer.count;
+                byte[] data = new byte[totalSize];
+                verticesBuffer.GetData(data);
+                meshCopy.SetVertexBufferData(data, 0, 0, totalSize, stream, MeshUpdateFlags.DontValidateIndices);
+            }
         }
 
-        // Recalculate normals and bounds
-        meshCopy.RecalculateNormals();
+        // Handle triangles
+        using (GraphicsBuffer indexesBuffer = nonReadableMesh.GetIndexBuffer())
+        {
+            int tot = indexesBuffer.stride * indexesBuffer.count;
+            byte[] indexesData = new byte[tot];
+            indexesBuffer.GetData(indexesData);
+            meshCopy.SetIndexBufferParams(indexesBuffer.count, nonReadableMesh.indexFormat);
+            meshCopy.SetIndexBufferData(indexesData, 0, 0, tot, MeshUpdateFlags.DontValidateIndices);
+        }
+
+        // Restore submesh structure as-is (keeps indexStart/baseVertex/topology of the original)
+        meshCopy.subMeshCount = nonReadableMesh.subMeshCount;
+        for (int i = 0; i < meshCopy.subMeshCount; i++)
+        {
+            meshCopy.SetSubMesh(i, nonReadableMesh.GetSubMesh(i), MeshUpdateFlags.DontValidateIndices);
+        }
+
+        if (!nonReadableMesh.HasVertexAttribute(VertexAttribute.Normal))
+        {
+            meshCopy.RecalculateNormals();
+        }
         meshCopy.RecalculateBounds();
 
         return meshCopy;

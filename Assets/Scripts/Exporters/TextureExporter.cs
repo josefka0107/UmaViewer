@@ -34,6 +34,8 @@ public class TextureExporter
         {
             foreach (Material mat in renderer.sharedMaterials)
             {
+                if (mat == null || mat.shader == null) continue;
+
                 // 获取材质的所有属性；如果某个属性对应纹理，则提取该纹理
                 Shader mat_shader = mat.shader;
                 int p_num = mat_shader.GetPropertyCount();
@@ -42,7 +44,8 @@ public class TextureExporter
                     string p_name = mat_shader.GetPropertyName(i);
                     if (mat_shader.GetPropertyType(i) == UnityEngine.Rendering.ShaderPropertyType.Texture)
                     {
-                        Texture2D mat_texture = (Texture2D)mat.GetTexture(p_name);
+                        // Scene materials also hold cubemaps/RenderTextures, which can't be exported as PNG.
+                        Texture2D mat_texture = mat.GetTexture(p_name) as Texture2D;
 
                         if (mat_texture)
                         {

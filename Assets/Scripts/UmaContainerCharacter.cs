@@ -845,7 +845,7 @@ public class UmaContainerCharacter : UmaContainer
         {
             for (int i = 0; i < container.springParam.Count; i++)
             {
-                CySpringParamDataElement element = container.springParam[i];
+                Gallop.CySpringParamDataElement element = container.springParam[i];
 
                 if (element == null)
                     continue;
@@ -860,7 +860,7 @@ public class UmaContainerCharacter : UmaContainer
 
                 for (int j = 0; j < element._childElements.Count; j++)
                 {
-                    CySpringParamDataChildElement child = element._childElements[j];
+                    Gallop.CySpringParamDataChildElement child = element._childElements[j];
 
                     if (child == null)
                         continue;

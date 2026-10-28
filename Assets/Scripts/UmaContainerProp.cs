@@ -1,13 +1,23 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using UnityEngine;
 
 public class UmaContainerProp : UmaContainer
 {
+    public UmaDatabaseEntry Entry;
+
+    /// <summary> "R" or "L" while attached to a character's hand, otherwise null </summary>
+    public string AttachedHand;
+
+    /// <summary> Loaded by <see cref="PropAnimationLinks"/>, so it goes away when the animation changes </summary>
+    public bool IsAutoLinked;
+
     public void LoadProp(UmaDatabaseEntry entry, Transform SetParent = null)
     {
+        Entry = entry;
         var go = entry.Get<GameObject>();
         var prop = Instantiate(go, SetParent ? SetParent : this.transform);
 
@@ -38,10 +48,7 @@ public class UmaContainerProp : UmaContainer
         }
 
         Position = transform;
-        var handle = UIHandleProp.CreateAsChild(this,
-            () => AttachToCharacter("Hand_Attach_R", "Wrist_R"),
-            () => AttachToCharacter("Hand_Attach_L", "Wrist_L"),
-            Detach);
+        var handle = UIHandleProp.CreateAsChild(this);
 
         // Handle at the prop's visual center
         var renderers = GetComponentsInChildren<Renderer>();
@@ -56,7 +63,7 @@ public class UmaContainerProp : UmaContainer
         }
     }
 
-    private void AttachToCharacter(params string[] boneNames)
+    public void AttachToHand(string hand)
     {
         var character = Builder.CurrentUMAContainer;
         if (character == null)
@@ -65,6 +72,8 @@ public class UmaContainerProp : UmaContainer
             return;
         }
 
+        // Props are modeled around Hand_Attach_*, so no offset is needed there
+        var boneNames = new[] { $"Hand_Attach_{hand}", $"Wrist_{hand}" };
         var bones = character.GetComponentsInChildren<Transform>();
         var bone = boneNames.Select(n => bones.FirstOrDefault(b => b.name == n)).FirstOrDefault(b => b != null);
         if (bone == null)
@@ -76,11 +85,48 @@ public class UmaContainerProp : UmaContainer
         transform.SetParent(bone, false);
         transform.localPosition = Vector3.zero;
         transform.localRotation = Quaternion.identity;
+        AttachedHand = hand;
     }
 
-    private void Detach()
+    public void Detach()
     {
         transform.SetParent(null, true);
+        AttachedHand = null;
+        IsAutoLinked = false;
+    }
+
+    /// <summary> Remembers this prop and hand for the character's current animation. </summary>
+    public void LinkToCurrentAnimation()
+    {
+        var animation = Builder.CurrentUMAContainer?.CurrentAnimationName;
+        if (string.IsNullOrEmpty(animation))
+        {
+            UI.ShowMessage("Load an animation first", UIMessageType.Warning);
+            return;
+        }
+        if (AttachedHand == null)
+        {
+            UI.ShowMessage("Attach the prop to a hand first", UIMessageType.Warning);
+            return;
+        }
+
+        PropAnimationLinks.Set(animation, Entry.Name, AttachedHand);
+        IsAutoLinked = true;
+        UI.ShowMessage($"{Path.GetFileName(Entry.Name)} linked to {animation}", UIMessageType.Success);
+    }
+
+    public void UnlinkCurrentAnimation()
+    {
+        var animation = Builder.CurrentUMAContainer?.CurrentAnimationName;
+        if (PropAnimationLinks.Remove(animation))
+        {
+            IsAutoLinked = false;
+            UI.ShowMessage($"Link removed from {animation}", UIMessageType.Success);
+        }
+        else
+        {
+            UI.ShowMessage("The current animation has no linked prop", UIMessageType.Warning);
+        }
     }
 
     /// <summary> True if the renderer belongs to a prop attached under <paramref name="owner"/> rather than to the owner itself. </summary>

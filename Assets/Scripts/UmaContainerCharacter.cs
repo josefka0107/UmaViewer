@@ -72,6 +72,9 @@ public class UmaContainerCharacter : UmaContainer
 
     [Header("Mob")]
     public bool IsMob = false;
+    /// <summary> File name of the last body animation loaded through <see cref="LoadAnimation(UmaDatabaseEntry)"/> </summary>
+    public string CurrentAnimationName;
+
     public DataRow MobDressColor;
     public DataRow MobHeadColor;
     public TextureList MobHeadTextures = new TextureList();
@@ -1936,6 +1939,8 @@ public class UmaContainerCharacter : UmaContainer
             //Debug.Log("LiveTime" + UI.LiveTime.ToString());
             aClip.name = entry.Name; // Need a complete path to find dependencies
             LoadAnimation(aClip);
+            CurrentAnimationName = Path.GetFileName(entry.Name);
+            PropAnimationLinks.Apply(this, CurrentAnimationName);
             return;
         }
 

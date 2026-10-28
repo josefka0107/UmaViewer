@@ -18,6 +18,11 @@ public class UIHandleProp : UIHandle
         handle.Popup.AddButton("Detach", owner.Detach);
         handle.Popup.AddButton("Link to Animation", owner.LinkToCurrentAnimation);
         handle.Popup.AddButton("Unlink Animation", owner.UnlinkCurrentAnimation);
+        handle.Popup.AddButton("Rename", () =>
+        {
+            owner.StartRename(handle.Popup.transform.position);
+            handle.Popup.gameObject.SetActive(false);
+        });
         return handle;
     }
 }

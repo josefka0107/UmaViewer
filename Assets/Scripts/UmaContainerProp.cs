@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using UnityEngine;
+using UnityEngine.UI;
 
 public class UmaContainerProp : UmaContainer
 {
@@ -127,6 +128,41 @@ public class UmaContainerProp : UmaContainer
         {
             UI.ShowMessage("The current animation has no linked prop", UIMessageType.Warning);
         }
+    }
+
+    /// <summary>
+    /// Shows a text field at <paramref name="screenPosition"/> to name this prop in the prop list.
+    /// The UI has no input dialog, so this reuses a copy of the prop list's search field for its style.
+    /// </summary>
+    public void StartRename(Vector3 screenPosition)
+    {
+        var template = UI.PropPageCtrl.SearchText;
+        var field = Instantiate(template, UI.HandlesPanel);
+        field.name = "PropRenameField";
+        // Drop the search listeners copied with the template
+        field.onValueChanged = new InputField.OnChangeEvent();
+        field.onEndEdit = new InputField.EndEditEvent();
+        field.onSubmit = new InputField.SubmitEvent();
+        field.interactable = true;
+        field.transform.position = screenPosition;
+        field.text = PropNames.GetUserName(Entry.Name) ?? "";
+        if (field.placeholder is Text placeholder)
+        {
+            placeholder.text = "Prop name (Enter to save)";
+        }
+
+        field.onEndEdit.AddListener(value =>
+        {
+            if (!Input.GetKeyDown(KeyCode.Escape))
+            {
+                PropNames.Set(Entry.Name, value);
+                UI.LoadPropPanel();
+                UI.ShowMessage(string.IsNullOrWhiteSpace(value) ? "Prop name removed" : $"Prop named {value.Trim()}", UIMessageType.Success);
+            }
+            Destroy(field.gameObject);
+        });
+        field.Select();
+        field.ActivateInputField();
     }
 
     /// <summary> True if the renderer belongs to a prop attached under <paramref name="owner"/> rather than to the owner itself. </summary>

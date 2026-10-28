@@ -802,7 +802,7 @@ public class UmaViewerUI : MonoBehaviour
         foreach (var prop in Main.AbList.Where(a => a.Key.Contains("pfb_chr_prop") && !a.Key.Contains("clothes")))
         {
             var pageentry = new PageManager.Entry();
-            pageentry.Name = Path.GetFileName(prop.Key);
+            pageentry.Name = PropNames.GetDisplayName(prop.Key);
             pageentry.OnClick = (container) =>
             {
                 HighlightChildImage(PropList.content, container);

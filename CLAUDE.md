@@ -47,7 +47,24 @@ Evaluado y pospuesto. Conclusiones:
 - **Viewing Props, Scenery, Live scenes** — props (`pfb_chr_prop*`) y escenarios (`3d/env/.../pfb_*`, `cutt/cutt_son*`) se cargan instanciando el prefab tal cual (`UmaContainerProp.LoadProp`), sin ajuste de shaders/iluminación; `LoadAssetPath` reporta scripts faltantes del juego.
   - Hecho (commits `13ce473`, `34c35cb`): props aparecen junto a la uma con gizmo magenta (`UIHandleProp`, en Pose Mode): Reset, Attach a mano derecha/izquierda (`Hand_Attach_R/L`, los props ya están modelados para ese hueso, sin offset), Detach, Link/Unlink a la animación actual. Vínculos en `PropAnimationLinks.json` (raíz del proyecto en el Editor, ignorado por git); se aplican en `UmaContainerCharacter.LoadAnimation`. Props pegados a la mano se excluyen del export de la uma.
   - `master.mdb` no tiene relación animación↔prop (`character_prop_animation` solo describe animaciones propias de 6 props); probablemente está en los timelines de historia.
-  - Pendiente: nombres legibles de props (la lista muestra nombres de archivo); issues upstream de lives #226 (solo una uma en lives de grupo), #227 ("Gift" en pose T), #229 (faltan luces), #239 (cutin 1007 no aparece en Scenes).
+  - Nombres de props (commit `f849bf8`, `PropNames.cs`): la lista muestra el nombre del personaje si el número coincide (`prop1001_*` → 1001) y nombres propios vía "Rename" en el gizmo, guardados en `PropNames.json` (ignorado por git). El campo de texto es una copia del buscador de Props (la UI no tiene diálogo de texto).
+
+## Pendientes (estado al 2026-10-28)
+
+En la rama `fix/duplicate-files-pr224`, todo commiteado. Siguiente sesión:
+
+1. **Lives** (necesitan prueba del usuario en el Editor con capturas; leer `Editor.log`):
+   - #226 lives de grupo (うまぴょい伝説) muestran solo una uma. Ver `UmaViewerBuilder.LoadLive`: expande personajes según `worksheetList[0].charaMotSeqList.Count`.
+   - #227 live "Gift": umas en pose T.
+   - #229 faltan luces del escenario en lives.
+   - #239 `pfb_env_cutin1007_00_00` (Gold Ship) no aparece en Scenes; filtro en `UmaViewerUI.LoadMapPanel` (`3d/env` + `pfb_`). Pedir al usuario buscar `cutin` en Scenes.
+2. **Verificar `PropNames.json`**: tras un Rename que el usuario confirma que funcionó, el archivo quedó `{}` (17:42). Revisar si el clic en "Rename" dispara `onEndEdit` con texto vacío antes de escribir, o si se borró después.
+3. Atajos (H, Espacio) siguen activos mientras se escribe en el campo Rename.
+4. Error TMP `m_AtlasTextures` al mostrar mensajes con japonés (fallback de fuente sin atlas).
+5. Dorsal de mobs (`_ZekkenNumberTex`), aparcado: requiere medir en runtime.
+6. Avisar upstream (katboi01): proyecto no compila tras PR #224 (duplicados) y Defender marca `CySpringPlugin.dll`; nuestros commits `6311308` y export pueden servir como PR.
+7. Confirmar que los vínculos de `PropAnimationLinks.json` sobreviven a reiniciar Play.
+8. Idea aparcada: versión web (ver sección arriba).
 - **Exporting models** — hecho en la rama `fix/duplicate-files-pr224` (commits `3336775`, `bac4bf4`), verificado en Blender 5.2 + MMD Tools con Vodka (1008), el escenario `pfb_env_cutin1004_00_00` y el mob 8626. Cubre issues upstream #125, #186, #230:
   - Una malla legible por renderer (`GetExportMesh`), compartida por vértices/materiales/morphs; `MakeReadableMeshCopy` copia todos los streams y submeshes.
   - Se ignoran renderers sin malla (partículas, líneas) y submeshes sin material (`GetExportSubMeshCount`: los mobs esconden un cuerpo entero ahí).

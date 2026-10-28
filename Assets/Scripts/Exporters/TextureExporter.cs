@@ -21,6 +21,84 @@ public class TextureExporter
         return readableText;
     }
 
+    static readonly string[] MaskColorChannels = { "R", "G", "B" };
+
+    /// <summary> Mob materials tint a near-white _MainTex in the shader using _MaskColorTex and _MaskColor* (USE_MASK_COLOR). </summary>
+    static public bool IsMaskColorMaterial(Material mat)
+    {
+        return mat.IsKeywordEnabled("USE_MASK_COLOR")
+            && mat.HasProperty("_MaskColorTex")
+            && mat.GetTexture("_MaskColorTex") is Texture2D;
+    }
+
+    /// <summary> File name (without extension) the material's main texture is exported under. </summary>
+    static public string GetMainTextureFileName(Material mat)
+    {
+        string name = mat.mainTexture.name;
+        if (!IsMaskColorMaterial(mat))
+        {
+            return name;
+        }
+
+        // Mob textures are shared between many mobs, so the baked copy is keyed by its colors.
+        // Prefixed rather than suffixed so name checks like EndsWith("eye0") still apply.
+        uint hash = 2166136261;
+        foreach (var c in MaskColorChannels)
+        {
+            foreach (var n in new[] { "1", "2" })
+            {
+                foreach (char ch in ColorUtility.ToHtmlStringRGB(mat.GetColor($"_MaskColor{c}{n}")))
+                {
+                    hash = (hash ^ ch) * 16777619;
+                }
+            }
+        }
+        return $"mask{hash:x8}_{name}";
+    }
+
+    /// <summary>
+    /// Approximates the game's USE_MASK_COLOR tint (the shader source is not available).
+    /// Each _MaskColorTex channel is 0.5 where unused; values towards 1 tint with color 2,
+    /// values towards 0 tint with color 1.
+    /// </summary>
+    static Texture2D BakeMaskColor(Texture2D diff, Material mat)
+    {
+        Texture2D mask = duplicateTexture((Texture2D)mat.GetTexture("_MaskColorTex"));
+        Color[] color1 = new Color[3];
+        Color[] color2 = new Color[3];
+        for (int c = 0; c < 3; c++)
+        {
+            color1[c] = mat.GetColor($"_MaskColor{MaskColorChannels[c]}1");
+            color2[c] = mat.GetColor($"_MaskColor{MaskColorChannels[c]}2");
+        }
+
+        Color[] pixels = diff.GetPixels();
+        int width = diff.width, height = diff.height;
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                int i = y * width + x;
+                Color m = mask.GetPixelBilinear((x + 0.5f) / width, (y + 0.5f) / height);
+                Color tint = Color.white;
+                for (int c = 0; c < 3; c++)
+                {
+                    float v = m[c];
+                    float weight = Mathf.Clamp01(Mathf.Abs(v - 0.5f) * 2);
+                    tint *= Color.Lerp(Color.white, v > 0.5f ? color2[c] : color1[c], weight);
+                }
+                Color p = pixels[i];
+                pixels[i] = new Color(p.r * tint.r, p.g * tint.g, p.b * tint.b, p.a);
+            }
+        }
+
+        Texture2D baked = new Texture2D(width, height);
+        baked.SetPixels(pixels);
+        baked.Apply();
+        UnityEngine.Object.Destroy(mask);
+        return baked;
+    }
+
     static public string[] ExportAllTexture(string path, GameObject gameobj)
     {
         string savePath = path + "/Texture2D/";
@@ -49,7 +127,8 @@ public class TextureExporter
 
                         if (mat_texture)
                         {
-                            string tex_name = mat_texture.name;
+                            bool bakeMask = p_name == "_MainTex" && IsMaskColorMaterial(mat);
+                            string tex_name = bakeMask ? GetMainTextureFileName(mat) : mat_texture.name;
                             string tex_path = savePath + tex_name + ".png";
                             var dpath = "Texture2D/" + tex_name + ".png";
                             if (!textureNames.Contains(dpath))
@@ -60,6 +139,10 @@ public class TextureExporter
                             {   
 
                                 mat_texture = duplicateTexture(mat_texture);
+                                if (bakeMask)
+                                {
+                                    mat_texture = BakeMaskColor(mat_texture, mat);
+                                }
 
                                 if (tex_name.EndsWith("eye0"))
                                 {

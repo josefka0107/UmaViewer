@@ -763,10 +763,10 @@ public class ModelExporter
         foreach (Renderer renderer in renderers)
         {
             Mesh mesh = meshes[renderer];
-            var materials = new List<Material>(renderer.sharedMaterials);
-            for (int i = 0; i < mesh.subMeshCount; i++)
+            var materials = renderer.sharedMaterials;
+            for (int i = 0; i < GetExportSubMeshCount(renderer, mesh); i++)
             {
-                var material = materials.Count == 0 ? null : (i < materials.Count ? materials[i] : materials[materials.Count - 1]);
+                var material = materials[i];
                 var part = new Part();
                 var mat = new MMDMaterial();
                 part.Material = mat;
@@ -782,7 +782,8 @@ public class ModelExporter
                 mat.EdgeSize = 0.4f;
                 if (material && material.HasProperty("_MainTex") && material.mainTexture)
                 {
-                    var tex = model.TextureList.Find(t => t.TexturePath.Contains($"/{material.mainTexture.name}.png"));
+                    var texName = TextureExporter.GetMainTextureFileName(material);
+                    var tex = model.TextureList.Find(t => t.TexturePath.Contains($"/{texName}.png"));
                     mat.Texture = (tex ?? defaultTexture);
                 }
                 else
@@ -790,13 +791,34 @@ public class ModelExporter
                     mat.Texture = defaultTexture;
                 }
                 mat.MetaInfo = "";
-                part.BaseShift = baseShift + mesh.GetSubMesh(i).indexStart;
-                part.TriangleIndexNum = mesh.GetSubMesh(i).indexCount;
+                // Parts follow the order AddSubMeshTriangles writes the triangles in.
+                part.BaseShift = baseShift;
+                part.TriangleIndexNum = (int)mesh.GetIndexCount(i);
+                baseShift += part.TriangleIndexNum;
                 parts.Add(part);
             }
-            baseShift += mesh.triangles.Length;
         }
         return parts.ToArray();
+    }
+
+    /// <summary>
+    /// Unity does not draw submeshes beyond the renderer's material count (mob bodies keep a hidden
+    /// full body there), so those are left out of the export instead of reusing the last material.
+    /// </summary>
+    private static int GetExportSubMeshCount(Renderer renderer, Mesh mesh)
+    {
+        return Mathf.Min(mesh.subMeshCount, renderer.sharedMaterials.Length);
+    }
+
+    private static void AddSubMeshTriangles(Renderer renderer, Mesh mesh, List<int> triangleList, int vertexOffset)
+    {
+        for (int i = 0; i < GetExportSubMeshCount(renderer, mesh); i++)
+        {
+            foreach (var triangle in mesh.GetTriangles(i))
+            {
+                triangleList.Add(triangle + vertexOffset);
+            }
+        }
     }
 
     private static Vertex[] ReadVerticesAndTriangles(List<Renderer> renderers, Dictionary<Renderer, Mesh> meshes, List<Transform> bones, ref List<int> triangleList, Transform root)
@@ -816,7 +838,6 @@ public class ModelExporter
                 var uv1 = mesh.uv2;
                 var uv2 = mesh.uv3;
                 var colors = mesh.colors;
-                var triangles = mesh.triangles;
 
                 int boneId = GetBoneIndex(bones, renderer.transform);
 
@@ -840,11 +861,7 @@ public class ModelExporter
                     verticesList.Add(vertex);
                 }
 
-
-                foreach (var triangle in mesh.triangles)
-                {
-                    triangleList.Add(triangle + vertexOffset);
-                }
+                AddSubMeshTriangles(renderer, mesh, triangleList, vertexOffset);
                 vertexOffset += vertices.Length;
             }
             else if (renderer is SkinnedMeshRenderer smr)
@@ -930,10 +947,7 @@ public class ModelExporter
                     verticesList.Add(vertex);
                 }
 
-                foreach (var triangle in mesh.triangles)
-                {
-                    triangleList.Add(triangle + vertexOffset);
-                }
+                AddSubMeshTriangles(renderer, mesh, triangleList, vertexOffset);
                 vertexOffset += vertices.Length;
             }
         }

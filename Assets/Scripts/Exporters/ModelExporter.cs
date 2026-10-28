@@ -124,6 +124,8 @@ public class ModelExporter
         }
         List<Transform> allBones = new List<Transform>(rootBone.GetComponentsInChildren<Transform>());
         allBones.RemoveAll(o => o.name.Contains("Col_"));
+        // Props attached to a hand are exported on their own, not as part of the character.
+        allBones.RemoveAll(o => { var prop = o.GetComponentInParent<UmaContainerProp>(); return prop != null && prop != container; });
 
         // Filter bones for export
         List<Transform> exportBones = new List<Transform>();
@@ -167,6 +169,7 @@ public class ModelExporter
         Dictionary<Renderer, Mesh> meshes = new Dictionary<Renderer, Mesh>();
         foreach (Renderer renderer in container.GetComponentsInChildren<Renderer>())
         {
+            if (UmaContainerProp.IsAttachedPropRenderer(renderer, container)) continue;
             var mesh = GetExportMesh(renderer);
             if (mesh != null)
             {

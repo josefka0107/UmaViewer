@@ -108,8 +108,11 @@ public class TextureExporter
             Directory.CreateDirectory(savePath);
         }
 
+        var owner = gameobj.GetComponent<UmaContainer>();
         foreach (Renderer renderer in gameobj.transform.GetComponentsInChildren<Renderer>())
         {
+            if (owner != null && UmaContainerProp.IsAttachedPropRenderer(renderer, owner)) continue;
+
             foreach (Material mat in renderer.sharedMaterials)
             {
                 if (mat == null || mat.shader == null) continue;

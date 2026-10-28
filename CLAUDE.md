@@ -16,7 +16,9 @@ Visor en Unity de los assets de Uma Musume: Pretty Derby. Fork de `josefka0107/U
 - Compilar en batch (~1–5 min; 0 errores = OK):
   `& "C:\Program Files\Unity\Hub\Editor\2022.3.62f3\Editor\Unity.exe" -batchmode -nographics -quit -projectPath "D:\dev\UmaViewer-Fork" -logFile <scratchpad>\unity.log`
   y buscar `error CS` / `conflicts with` en el log. Las pruebas visuales las hace el usuario en el Editor (escena `Version2`).
-- Unity puede reescribir `ProjectSettings/ShaderGraphSettings.asset` solo con finales de línea; revertir con `git checkout`.
+- Si el Editor está abierto con el proyecto, el batch no puede correr: Unity recompila al volver a su ventana. Leer el resultado en `C:\Users\jose.rangel\AppData\Local\Unity\Editor\Editor.log` (`grep "error CS"` tras la última compilación).
+- Cuidado: en archivos con `using Gallop;` existe `Gallop.Math`; usar `Mathf` o `System.Math` explícito.
+- Unity reescribe solo `ProjectSettings/ShaderGraphSettings.asset`, `ProjectSettings/ProjectSettings.asset` y `Assets/RT/RT_Screen.renderTexture` al usar el Editor; no incluirlos en commits salvo cambio intencionado.
 - `Assets/Plugins/CySpringPlugin.dll` (3,8 MB, sin firmar, añadido en PR #224 upstream) lo detecta Defender como `Trojan:Win32/Kepavll!rfn`. El usuario decidió excluir solo ese archivo en Defender (2026-10-28). No es el DLL del juego (`umamusume_Data/Plugins/x86_64/CySpringPlugin.dll`, 676 KB), aunque ambos exportan `NativeClothUpdate`, `NativeClothSkirtUpdate`, `NativeSkirtUpdate`.
 - Upstream (katboi01, commit 07f82e9 / PR #224) **no compila**: copió ~25 archivos a carpetas nuevas sin borrar los viejos. Arreglado en la rama `fix/duplicate-files-pr224` (borrar copias viejas con mismo GUID, quitar `Assets/Plugins/StandaloneFileBrowser` y su referencia en `umamusume.asmdef`, calificar `Gallop.CySpringParamData*Element` en `UmaContainerCharacter.cs`).
 - Hay dos juegos de clases CySpring: `Gallop.*` (`Gallop/Cyspring/`, el que usan los personajes) y global (`Gallop/StageScript/CySpring/`, `Gallop/DereScript/StageScript/CySpring/`). Dentro de clases sin namespace el nombre sin calificar resuelve al global: calificar con `Gallop.`.
@@ -43,8 +45,13 @@ Evaluado y pospuesto. Conclusiones:
 ## Features pendientes (README: "/" incompleto)
 
 - **Viewing Props, Scenery, Live scenes** — props (`pfb_chr_prop*`) y escenarios (`3d/env/.../pfb_*`, `cutt/cutt_son*`) se cargan instanciando el prefab tal cual (`UmaContainerProp.LoadProp`), sin ajuste de shaders/iluminación; `LoadAssetPath` reporta scripts faltantes del juego.
-- **Exporting models** — ver issues upstream katboi01/UmaViewer #125, #186, #177, #230. Problemas detectados en `ModelExporter.cs`:
-  - `MakeReadableMeshCopy` solo copia el vertex buffer stream 0; mallas con varios streams pierden UVs/normales.
-  - Ruta `MeshRenderer` usa `meshfilter.mesh` (instancia copia) en vez de `sharedMesh`, e indexa `normals[i]`/`uv[i]` sin comprobar que existan.
-  - `ExportModel(UmaContainer, ...)` crea el `FileStream` antes de construir el modelo y no tiene try/finally → excepción deja un `.pmx` de 0 bytes (#186).
-  - Mobs: texturas de pelo/ojos/cola compartidas no se exportan y los colores de `mob_*_color_set` no se aplican (#177, #230).
+- **Exporting models** — hecho en la rama `fix/duplicate-files-pr224` (commits `3336775`, `bac4bf4`), verificado en Blender 5.2 + MMD Tools con Vodka (1008), el escenario `pfb_env_cutin1004_00_00` y el mob 8626. Cubre issues upstream #125, #186, #230:
+  - Una malla legible por renderer (`GetExportMesh`), compartida por vértices/materiales/morphs; `MakeReadableMeshCopy` copia todos los streams y submeshes.
+  - Se ignoran renderers sin malla (partículas, líneas) y submeshes sin material (`GetExportSubMeshCount`: los mobs esconden un cuerpo entero ahí).
+  - `PMXWriter` calcula el tamaño de índices según los conteos (escenas >65535 vértices / >127 texturas).
+  - PMX se escribe a `.tmp` y se mueve al final (`WritePMX`), con errores mostrados en la UI.
+  - Colores de mobs: `TextureExporter.BakeMaskColor` hornea `USE_MASK_COLOR` en `_MainTex` (archivo `mask<hash>_<tex>.png`). Fórmula **aproximada** (no hay fuente del shader): canal de `_MaskColorTex` neutro en 0.5, hacia 1 tiñe con color `X2`, hacia 0 con `X1`, multiplicado sobre el diff.
+  - Comprobación sin Blender: scripts node en el scratchpad (`pmxcheck.js` valida estructura, `pmxmats.js` lista material→textura).
+- **Pendiente en export:**
+  - Número del dorsal (`_ZekkenNumberTex`, glifo 64×64 en alfa, número aleatorio 1–17 en `UmaContainerCharacter.cs:1411`): la posición la calcula el shader; la malla no tiene UV para ello. Única vía fiable: medirlo en runtime (render con/sin número + render de UVs). Aparcado por coste.
+  - `UnassignedReferenceException: m_AtlasTextures of TMP_FontAsset` al mostrar mensajes con texto japonés (`UmaViewerUI.ShowMessage`): fuente de fallback TMP sin atlas. No afecta al export; sin investigar si es previo a nuestros cambios.

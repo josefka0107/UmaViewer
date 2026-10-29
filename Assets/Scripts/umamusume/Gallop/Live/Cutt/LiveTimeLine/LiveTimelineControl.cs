@@ -409,8 +409,10 @@ namespace Gallop.Live.Cutt
                 if (ws == null) continue;
 
                 AlterUpdate_TransformControl(ws, _currentFrame);
-                AlterUpdate_ObjectControl(ws, _currentFrame);
+                // Animations first: objectList keys on an animated node win over the clip (1054 animates the
+                // handrail up 1 m while objectList already raises its root and pins the node at +0).
                 AlterUpdate_AnimationControl(ws, _currentFrame);
+                AlterUpdate_ObjectControl(ws, _currentFrame);
                 AlterUpdate_MobControl(ws, _currentFrame);
                 AlterUpdate_CyalumeControl(ws, _currentFrame);
                 AlterUpdate_BlinkLight(ws, _currentFrame);

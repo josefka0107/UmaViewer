@@ -1151,9 +1151,16 @@ namespace Gallop.Live
                             attach_transform = parentTransform;
                         break;
                     case AttachType.Character:
-                        var chara = Director.instance.CharaContainerScript[updateInfo.CharacterPosition];
-                        if (chara)
-                            attach_transform = chara.transform;
+                        // CharacterPosition is 1-based here (1181 attaches to 7 and 8 with 8 positions)
+                        var charas = Director.instance.CharaContainerScript;
+                        int charaIndex = updateInfo.CharacterPosition - 1;
+                        if (charaIndex < 0 || charaIndex >= charas.Count || !charas[charaIndex])
+                        {
+                            // Nobody stands at that position, so there is nothing to show the object on
+                            gameObject.SetActive(false);
+                            return;
+                        }
+                        attach_transform = charas[charaIndex].transform;
                         break;
                     case AttachType.Camera:
                         attach_transform = Director.instance.MainCameraTransform;

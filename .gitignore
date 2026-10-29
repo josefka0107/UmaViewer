@@ -72,3 +72,5 @@ Thumbs.db
 __pycache__/
 # Bundles decrypted by Tools/bundle-inspect (game data, keep out of git)
 Tools/bundle-inspect/bundles/
+# Live screenshots taken with F3 (game content, keep out of git)
+LiveCaptures/

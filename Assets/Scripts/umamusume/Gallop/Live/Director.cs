@@ -551,6 +551,62 @@ namespace Gallop.Live
             Debug.Log(sb.ToString());
         }
 
+        private List<int> _captureFrames;
+        private int _captureIndex;
+        private string _captureFolder;
+
+        /// <summary>
+        /// F3 saves a screenshot in the middle of every camera shot (from cameraPosKeys: a cut follows each key
+        /// without interpolation; shots under 40 frames are skipped), to compare the viewer with the game's own
+        /// video of the live at the same moments. Files go to LiveCaptures/son&lt;id&gt;/f&lt;frame&gt;.png.
+        /// </summary>
+        private void ToggleShotCapture()
+        {
+            if (_captureFrames != null)
+            {
+                Debug.Log($"[Capture] stopped after {_captureIndex} of {_captureFrames.Count} shots");
+                _captureFrames = null;
+                return;
+            }
+
+            var keys = _liveTimelineControl?.data?.worksheetList?.FirstOrDefault()?.cameraPosKeys?.thisList;
+            if (keys == null || keys.Count == 0) return;
+
+            var cuts = new List<int>();
+            for (int i = 0; i < keys.Count; i++)
+                if (i == 0 || keys[i - 1].interpolateType == LiveCameraInterpolateType.None)
+                    cuts.Add(keys[i].frame);
+            cuts.Add(Mathf.RoundToInt(totalTime * 60));
+
+            int now = (int)(_liveCurrentTime * 60);
+            _captureFrames = new List<int>();
+            for (int i = 0; i + 1 < cuts.Count; i++)
+                if (cuts[i + 1] - cuts[i] >= 40 && (cuts[i] + cuts[i + 1]) / 2 > now)
+                    _captureFrames.Add((cuts[i] + cuts[i + 1]) / 2);
+            _captureIndex = 0;
+            _captureFolder = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "LiveCaptures", $"son{live?.MusicId}"));
+            Directory.CreateDirectory(_captureFolder);
+            Debug.Log($"[Capture] {_captureFrames.Count} shots from frame {now} into {_captureFolder}: {string.Join(", ", _captureFrames)}");
+        }
+
+        private void UpdateShotCapture()
+        {
+            if (_captureFrames == null) return;
+            int frame = (int)(_liveCurrentTime * 60);
+            if (_captureIndex >= _captureFrames.Count)
+            {
+                Debug.Log($"[Capture] done, {_captureFrames.Count} shots in {_captureFolder}");
+                _captureFrames = null;
+                return;
+            }
+            if (frame < _captureFrames[_captureIndex]) return;
+
+            // One shot per update; a slow frame skips ahead to the shot it reached
+            while (_captureIndex + 1 < _captureFrames.Count && frame >= _captureFrames[_captureIndex + 1]) _captureIndex++;
+            ScreenCapture.CaptureScreenshot(Path.Combine(_captureFolder, $"f{_captureFrames[_captureIndex]:00000}_at{frame:00000}.png"));
+            _captureIndex++;
+        }
+
         bool isExit;
         void Update()
         {
@@ -558,6 +614,9 @@ namespace Gallop.Live
 
             if (Input.GetKeyDown(KeyCode.F2) && !UmaViewerUI.IsTyping)
                 LogRenderersUnderMouse();
+            if (Input.GetKeyDown(KeyCode.F3) && !UmaViewerUI.IsTyping)
+                ToggleShotCapture();
+            UpdateShotCapture();
 
             if (_isLiveSetup)
             {

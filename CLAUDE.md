@@ -35,6 +35,8 @@ Visor en Unity de los assets de Uma Musume: Pretty Derby. Fork de `josefka0107/U
 
 - REA (`rea-agents` 6.8.0, CLI global bajo Node 26.13.0 vía fnm). Ej.: `rea inspect-sqlite-database <copia.mdb> --table chara_data --schema-scope selected_table --row-limit 5 --format json`.
 - En Windows con fnm, usar `npm.cmd` / `rea.cmd` dentro de `fnm exec`.
+- `Tools/bundle-inspect` (Python + UnityPy, venv aparte): descifra bundles vía `meta` y lee el TypeTree (nombres reales de campos de clases del juego), busca nodos (`findnode.py`) y simula props de lives (`propsim.py`). Es la vía para entender objetos del juego; REA no sirve (IL2CPP sin metadata en disco).
+- Referencia revisada (2026-10-29): [UmamusumeExplorer](https://github.com/MarshmallowAndroid/UmamusumeExplorer) (C#, AssetsTools.NET). Solo audio (CRI HCA/ACB, mezcla de voces por posición en `Audio/Live/SongMixer.cs`, `PartTrigger.cs`), tablas de `master.mdb` y extractor; mismo descifrado que `UmaAssetBundleStream`. Sin clases 3D (cutt, props, luces). Útil si se trabaja el audio de lives.
 
 ## Idea aparcada: versión web
 

@@ -1283,6 +1283,9 @@ namespace Gallop.Live
                     if (mat == null) continue;
 
                     if (mat.HasProperty("_CharaColor")) mat.SetColor("_CharaColor", updateInfo.color);
+                    // Stage materials without character colors take the timeline color as their multiply color:
+                    // 1181's cut-in backdrops (cutt000_sphere/plane, DefaultTransparentNoAmbient) stayed white otherwise
+                    else if (mat.HasProperty("_MulColor0")) mat.SetColor("_MulColor0", updateInfo.color);
                     if (mat.HasProperty("_ToonDarkColor")) mat.SetColor("_ToonDarkColor", updateInfo.toonDarkColor);
                     if (mat.HasProperty("_ToonBrightColor")) mat.SetColor("_ToonBrightColor", updateInfo.toonBrightColor);
                     if (mat.HasProperty("_OutlineColor")) mat.SetColor("_OutlineColor", updateInfo.outlineColor);

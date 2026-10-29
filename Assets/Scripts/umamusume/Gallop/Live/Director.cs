@@ -597,6 +597,9 @@ namespace Gallop.Live
 
                 UpdateMainCamera();
 
+                if (LiveViewerUI.Instance)
+                    LiveViewerUI.Instance.UpdateTime(_liveCurrentTime, totalTime);
+
                 // 时间轴和主相机都更新完后再同步 Laser Renderer/朝向。
                 // 这样既不会读取上一帧 LaserUpdateInfo，也不会读取上一帧相机姿态。
                 if (_stageController != null)

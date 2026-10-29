@@ -85,4 +85,36 @@ public class LiveViewerUI : MonoBehaviour
         var text = UmaUtility.GetCurrentLyrics(time, CurrentLyrics);
         LyricsText.text = text;
     }
+
+    private Text timeText;
+
+    /// <summary>
+    /// Shows elapsed / total time and the timeline frame (60 per second, the frame the log prints) in the top left
+    /// corner, always visible so screenshots can be matched with the log. A copy of the lyrics text, for its font.
+    /// </summary>
+    public void UpdateTime(float time, float totalTime)
+    {
+        if (!timeText)
+        {
+            if (!LyricsText) return;
+            timeText = Instantiate(LyricsText, LyricsText.canvas.transform);
+            timeText.name = "LiveTimeText";
+            timeText.alignment = TextAnchor.UpperLeft;
+            timeText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            timeText.verticalOverflow = VerticalWrapMode.Overflow;
+            timeText.fontSize = Mathf.Max(14, LyricsText.fontSize / 2);
+            timeText.raycastTarget = false;
+            var rect = timeText.rectTransform;
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0, 1);
+            rect.anchoredPosition = new Vector2(10, -10);
+            rect.sizeDelta = new Vector2(400, 40);
+        }
+        timeText.text = $"{FormatTime(time)} / {FormatTime(totalTime)}   frame {(int)(time * 60)}";
+    }
+
+    private static string FormatTime(float seconds)
+    {
+        seconds = Mathf.Max(0, seconds);
+        return $"{(int)(seconds / 60):00}:{seconds % 60:00.00}";
+    }
 }

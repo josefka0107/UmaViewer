@@ -1333,7 +1333,7 @@ namespace Gallop.Live
             if (report)
             {
                 var props = targets.Where(r => r != null).SelectMany(r => r.sharedMaterials).Where(m => m != null)
-                    .Select(m => m.HasProperty("_CharaColor") ? "_CharaColor" : m.HasProperty("_MulColor0") ? "_MulColor0" : "none:" + m.shader.name)
+                    .Select(m => m.HasProperty("_CharaColor") ? "_CharaColor" : m.HasProperty("_MulColor0") ? "_MulColor0" : m.HasProperty("_Color") ? "_Color:" + m.shader.name : "none:" + m.shader.name)
                     .GroupBy(p => p).Select(g => $"{g.Key}x{g.Count()}");
                 Debug.Log($"[BgColor1] '{updateInfo.TimelineName}': {targets.Count} renderers ({string.Join(", ", targets.Take(4).Where(r => r != null).Select(r => r.name))}...) color={updateInfo.color} writes {string.Join(", ", props)}");
             }
@@ -1357,6 +1357,9 @@ namespace Gallop.Live
                     // Stage materials without character colors take the timeline color as their multiply color:
                     // 1181's cut-in backdrops (cutt000_sphere/plane, DefaultTransparentNoAmbient) stayed white otherwise
                     else if (mat.HasProperty("_MulColor0")) mat.SetColor("_MulColor0", updateInfo.color);
+                    // Shadow panels (Stage/Shadow, StageDefaultShadowPanel, "Shadow" lists) and plain unlit stage
+                    // parts (UnlitVcolorNoFog, "BgBL") declare no other color than _Color
+                    else if (mat.HasProperty("_Color")) mat.SetColor("_Color", updateInfo.color);
                     if (mat.HasProperty("_ToonDarkColor")) mat.SetColor("_ToonDarkColor", updateInfo.toonDarkColor);
                     if (mat.HasProperty("_ToonBrightColor")) mat.SetColor("_ToonBrightColor", updateInfo.toonBrightColor);
                     if (mat.HasProperty("_OutlineColor")) mat.SetColor("_OutlineColor", updateInfo.outlineColor);

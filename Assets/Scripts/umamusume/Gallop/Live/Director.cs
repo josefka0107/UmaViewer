@@ -73,6 +73,7 @@ namespace Gallop.Live
         public bool RequireStage = true;
 
         private bool _lateTimelineAppliedThisFrame;
+        private LivePropsController _propsController;
 
         public Transform MainCameraTransform => _mainCameraTransform;
 
@@ -201,6 +202,16 @@ namespace Gallop.Live
             }
 
             _liveTimelineControl.InitCharaMotionSequence(_liveTimelineControl.data.characterSettings.motionSequenceIndices);
+
+            try
+            {
+                _propsController = new LivePropsController(_liveTimelineControl.data, CharaContainerScript);
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+                _propsController = null;
+            }
 
             _liveTimelineControl.OnUpdateLipSync += delegate (LiveTimelineKeyIndex keyData_, float liveTime_)
             {
@@ -469,6 +480,20 @@ namespace Gallop.Live
 
             _liveTimelineControl.AlterLateUpdate();
             _lateTimelineAppliedThisFrame = true;
+
+            if (_propsController != null)
+            {
+                try
+                {
+                    _propsController.AlterUpdate(_liveCurrentTime * 60f);
+                }
+                catch (Exception e)
+                {
+                    // Keep the live running without props instead of logging every frame
+                    Debug.LogException(e);
+                    _propsController = null;
+                }
+            }
         }
 
         bool isExit;

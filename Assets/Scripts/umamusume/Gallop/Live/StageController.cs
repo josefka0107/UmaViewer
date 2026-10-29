@@ -195,8 +195,50 @@ namespace Gallop.Live
             }
         }
 
+        private float _rendererReportTime = -1;
+
+        /// <summary>
+        /// Logs the stage renderers by shader and every one that cannot draw (null material, unsupported or error
+        /// shader), to find objects that only show up as shadows. Runs once, a few seconds after the stage loads.
+        /// </summary>
+        private void ReportStageRenderers()
+        {
+            var byShader = new Dictionary<string, int>();
+            var broken = new List<string>();
+            foreach (var r in GetComponentsInChildren<Renderer>(true))
+            {
+                if (r == null) continue;
+                var mats = r.sharedMaterials;
+                if (mats == null || mats.Length == 0) { broken.Add($"{r.name}: no materials"); continue; }
+                foreach (var m in mats)
+                {
+                    string shaderName = m == null ? "<null material>" : m.shader == null ? "<null shader>" : m.shader.name;
+                    byShader[shaderName] = byShader.TryGetValue(shaderName, out int c) ? c + 1 : 1;
+                    if (m == null || m.shader == null || !m.shader.isSupported || shaderName.Contains("InternalError") || shaderName.StartsWith("Hidden/"))
+                        broken.Add($"{GetPath(r.transform)} [{shaderName}] active={r.gameObject.activeInHierarchy} enabled={r.enabled} castShadows={r.shadowCastingMode}");
+                }
+            }
+            Debug.Log("[StageRenderers] by shader: " + string.Join(", ", byShader.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key}={kv.Value}")));
+            Debug.Log($"[StageRenderers] {broken.Count} renderers cannot draw:\n  " + string.Join("\n  ", broken.Take(200)));
+        }
+
+        private string GetPath(Transform t)
+        {
+            var parts = new List<string>();
+            for (; t != null && t != transform; t = t.parent) parts.Add(t.name);
+            parts.Reverse();
+            return string.Join("/", parts);
+        }
+
         private void LateUpdate()
         {
+            if (_rendererReportTime < 0) _rendererReportTime = Time.time + 3f;
+            else if (_rendererReportTime > 0 && Time.time >= _rendererReportTime)
+            {
+                _rendererReportTime = 0;
+                try { ReportStageRenderers(); } catch (Exception e) { Debug.LogException(e); }
+            }
+
             var dir = Director.instance;
             var ctl = dir ? dir._liveTimelineControl : null;
 
@@ -1136,6 +1178,7 @@ namespace Gallop.Live
 
         /// <summary> Names already logged by <see cref="UpdateObject"/>, so each object is reported once. </summary>
         private readonly HashSet<string> _loggedObjectNames = new HashSet<string>();
+        private readonly HashSet<string> _bgColor1Reported = new HashSet<string>();
 
         /// <summary>
         /// Applies an objectList key to a stage object, or to every object of a stage unit (1181 moves the unit
@@ -1264,8 +1307,19 @@ namespace Gallop.Live
                 return;
 
             var targets = ResolveBgColorRenderers(updateInfo.TimelineName, wantBgColor2Style: false);
+            bool report = updateInfo.TimelineName != null && _bgColor1Reported.Add(updateInfo.TimelineName);
             if (targets == null || targets.Count == 0)
+            {
+                if (report) Debug.Log($"[BgColor1] '{updateInfo.TimelineName}': no renderers");
                 return;
+            }
+            if (report)
+            {
+                var props = targets.Where(r => r != null).SelectMany(r => r.sharedMaterials).Where(m => m != null)
+                    .Select(m => m.HasProperty("_CharaColor") ? "_CharaColor" : m.HasProperty("_MulColor0") ? "_MulColor0" : "none:" + m.shader.name)
+                    .GroupBy(p => p).Select(g => $"{g.Key}x{g.Count()}");
+                Debug.Log($"[BgColor1] '{updateInfo.TimelineName}': {targets.Count} renderers ({string.Join(", ", targets.Take(4).Where(r => r != null).Select(r => r.name))}...) color={updateInfo.color} writes {string.Join(", ", props)}");
+            }
 
             for (int i = 0; i < targets.Count; i++)
             {

@@ -887,7 +887,8 @@ public string[] NormalBodyKeywords  = new[] { "skin", "body", "bdy", "face", "he
                         .charaMotSeqList
                         .Count;
 
-                    if (actualMemberCount > liveCharacters.Count && liveCharacters.Count > 0)
+                    // Mode 0 plays one body clip per main member, so it cannot use more characters than clips
+                    if (UI.LiveMode == 1 && actualMemberCount > liveCharacters.Count && liveCharacters.Count > 0)
                     {
                         Debug.LogWarning(
                             $"actual member count is {actualMemberCount} current {liveCharacters.Count}");

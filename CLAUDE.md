@@ -56,6 +56,7 @@ En la rama `fix/duplicate-files-pr224`, todo commiteado. Siguiente sesión:
 
 1. **Lives** (necesitan prueba del usuario en el Editor con capturas; leer `Editor.log`):
    - #226 lives de grupo (うまぴょい伝説) muestran solo una uma. Ver `UmaViewerBuilder.LoadLive`: expande personajes según `worksheetList[0].charaMotSeqList.Count`.
+   - Modo 0 ("Main Members", un clip `son<id>_*` de 4 partes por miembro) crasheaba con `ArgumentOutOfRangeException` en `LiveTimelineMotionSequence.Initialize` (visto con 1181 トレセンラーメン列伝): la expansión de PR #224 en `LoadLive` añadía más personajes que clips. Arreglado (2026-10-29): solo se expande en modo 1 y se protege el índice. Falta prueba del usuario.
    - #227 live "Gift": umas en pose T.
    - #229 faltan luces del escenario en lives.
    - #239 `pfb_env_cutin1007_00_00` (Gold Ship) no aparece en Scenes; filtro en `UmaViewerUI.LoadMapPanel` (`3d/env` + `pfb_`). Pedir al usuario buscar `cutin` en Scenes.

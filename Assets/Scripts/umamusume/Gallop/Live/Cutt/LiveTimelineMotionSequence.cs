@@ -42,7 +42,7 @@ namespace Gallop.Live.Cutt
         {
             if(animclips != null)
             {
-                if (targetIndex < Director.instance.charaAnims.Count)
+                if (targetIndex < Director.instance.charaAnims.Count && targetIndex < animclips.Count)
                 {
                     _targetAnim = animclips[targetIndex];
 

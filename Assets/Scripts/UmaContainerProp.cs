@@ -151,16 +151,18 @@ public class UmaContainerProp : UmaContainer
             placeholder.text = "Prop name (Enter to save)";
         }
 
-        field.onEndEdit.AddListener(value =>
+        // Only Enter saves. onEndEdit also fires on Escape, on clicking elsewhere and when the field
+        // gets disabled, and saving there used to write the field's text (often empty) by accident.
+        field.onSubmit.AddListener(value =>
         {
-            if (!Input.GetKeyDown(KeyCode.Escape))
-            {
-                PropNames.Set(Entry.Name, value);
-                UI.LoadPropPanel();
-                UI.ShowMessage(string.IsNullOrWhiteSpace(value) ? "Prop name removed" : $"Prop named {value.Trim()}", UIMessageType.Success);
-            }
-            Destroy(field.gameObject);
+            var oldName = PropNames.GetUserName(Entry.Name) ?? "";
+            if (value.Trim() == oldName) return;
+
+            PropNames.Set(Entry.Name, value);
+            UI.LoadPropPanel();
+            UI.ShowMessage(string.IsNullOrWhiteSpace(value) ? "Prop name removed" : $"Prop named {value.Trim()}", UIMessageType.Success);
         });
+        field.onEndEdit.AddListener(_ => Destroy(field.gameObject));
         field.Select();
         field.ActivateInputField();
     }

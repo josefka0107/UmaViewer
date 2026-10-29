@@ -186,9 +186,12 @@ namespace RuntimeGizmos
 
         void Update()
         {
-            HandleUndoRedo();
+            if (!UmaViewerUI.IsTyping)
+            {
+                HandleUndoRedo();
 
-            SetSpaceAndType();
+                SetSpaceAndType();
+            }
 
             if (manuallyHandleGizmo)
             {

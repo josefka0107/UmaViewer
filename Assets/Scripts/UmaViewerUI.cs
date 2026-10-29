@@ -15,6 +15,21 @@ using System.Text;
 public class UmaViewerUI : MonoBehaviour
 {
     public static UmaViewerUI Instance;
+
+    /// <summary> True while a text field has keyboard focus, so keyboard shortcuts should be ignored. </summary>
+    public static bool IsTyping
+    {
+        get
+        {
+            var selected = UnityEngine.EventSystems.EventSystem.current?.currentSelectedGameObject;
+            if (selected == null) return false;
+            var field = selected.GetComponent<InputField>();
+            if (field != null) return field.isFocused;
+            var tmpField = selected.GetComponent<TMP_InputField>();
+            return tmpField != null && tmpField.isFocused;
+        }
+    }
+
     private UmaViewerMain Main => UmaViewerMain.Instance;
     private UmaViewerBuilder Builder => UmaViewerBuilder.Instance;
 

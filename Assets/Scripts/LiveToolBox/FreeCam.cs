@@ -53,6 +53,8 @@ public class FreeCam : MonoBehaviour
     {
         var fastMode = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
         var movementSpeed = fastMode ? this.fastMovementSpeed : this.movementSpeed;
+        // Letters typed into a text field must not move the camera
+        if (UmaViewerUI.IsTyping) movementSpeed = 0;
 
         if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow))
         {

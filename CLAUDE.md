@@ -16,6 +16,7 @@ Visor en Unity de los assets de Uma Musume: Pretty Derby. Fork de `josefka0107/U
 - Compilar en batch (~1–5 min; 0 errores = OK):
   `& "C:\Program Files\Unity\Hub\Editor\2022.3.62f3\Editor\Unity.exe" -batchmode -nographics -quit -projectPath "D:\dev\UmaViewer-Fork" -logFile <scratchpad>\unity.log`
   y buscar `error CS` / `conflicts with` en el log. Las pruebas visuales las hace el usuario en el Editor (escena `Version2`).
+- Compilar sin Unity (p. ej. en un worktree sin `Library/`, que es enorme y no se puede copiar): generar un `.rsp` desde `umamusume.csproj` / `RuntimeGizmo.csproj` del checkout principal (HintPaths relativos a él, `ProjectReference` → `Library/ScriptAssemblies/*.dll`, fuentes del worktree) y ejecutar `Editor\Data\NetCoreRuntime\dotnet.exe Editor\Data\DotNetSdkRoslyn\csc.dll -noconfig @archivo.rsp`. Solo valida C#, no la importación de assets.
 - Si el Editor está abierto con el proyecto, el batch no puede correr: Unity recompila al volver a su ventana. Leer el resultado en `C:\Users\jose.rangel\AppData\Local\Unity\Editor\Editor.log` (`grep "error CS"` tras la última compilación).
 - Cuidado: en archivos con `using Gallop;` existe `Gallop.Math`; usar `Mathf` o `System.Math` explícito.
 - Unity reescribe solo `ProjectSettings/ShaderGraphSettings.asset`, `ProjectSettings/ProjectSettings.asset` y `Assets/RT/RT_Screen.renderTexture` al usar el Editor; no incluirlos en commits salvo cambio intencionado.
@@ -58,13 +59,12 @@ En la rama `fix/duplicate-files-pr224`, todo commiteado. Siguiente sesión:
    - #227 live "Gift": umas en pose T.
    - #229 faltan luces del escenario en lives.
    - #239 `pfb_env_cutin1007_00_00` (Gold Ship) no aparece en Scenes; filtro en `UmaViewerUI.LoadMapPanel` (`3d/env` + `pfb_`). Pedir al usuario buscar `cutin` en Scenes.
-2. **Verificar `PropNames.json`**: tras un Rename que el usuario confirma que funcionó, el archivo quedó `{}` (17:42). Revisar si el clic en "Rename" dispara `onEndEdit` con texto vacío antes de escribir, o si se borró después.
-3. Atajos (H, Espacio) siguen activos mientras se escribe en el campo Rename.
-4. Error TMP `m_AtlasTextures` al mostrar mensajes con japonés (fallback de fuente sin atlas).
-5. Dorsal de mobs (`_ZekkenNumberTex`), aparcado: requiere medir en runtime.
-6. Avisar upstream (katboi01): proyecto no compila tras PR #224 (duplicados) y Defender marca `CySpringPlugin.dll`; nuestros commits `6311308` y export pueden servir como PR.
-7. Confirmar que los vínculos de `PropAnimationLinks.json` sobreviven a reiniciar Play.
-8. Idea aparcada: versión web (ver sección arriba).
+2. ~~`PropNames.json` quedó `{}`~~ y ~~atajos activos al escribir~~: arreglado en la rama `fix/rename-and-hotkeys` (2026-10-29). Causa probable: el campo guardaba en `onEndEdit`, que UGUI también dispara al hacer clic fuera / Escape / desactivarse → `Set(prop, "")`. Ahora solo guarda con Enter (`onSubmit`) y si el nombre cambió. `UmaViewerUI.IsTyping` silencia H, Espacio, atajos del gizmo y teclas de `FreeCam`. **Falta prueba del usuario** en el Editor.
+3. Error TMP `m_AtlasTextures` al mostrar mensajes con japonés (fallback de fuente sin atlas).
+4. Dorsal de mobs (`_ZekkenNumberTex`), aparcado: requiere medir en runtime.
+5. Avisar upstream (katboi01): proyecto no compila tras PR #224 (duplicados) y Defender marca `CySpringPlugin.dll`; nuestros commits `6311308` y export pueden servir como PR.
+6. Vínculos de `PropAnimationLinks.json`: el archivo conserva 4 vínculos del 2026-10-28 tras cerrar el Editor; falta confirmar que se reaplican al reabrir Play.
+7. Idea aparcada: versión web (ver sección arriba).
 - **Exporting models** — hecho en la rama `fix/duplicate-files-pr224` (commits `3336775`, `bac4bf4`), verificado en Blender 5.2 + MMD Tools con Vodka (1008), el escenario `pfb_env_cutin1004_00_00` y el mob 8626. Cubre issues upstream #125, #186, #230:
   - Una malla legible por renderer (`GetExportMesh`), compartida por vértices/materiales/morphs; `MakeReadableMeshCopy` copia todos los streams y submeshes.
   - Se ignoran renderers sin malla (partículas, líneas) y submeshes sin material (`GetExportSubMeshCount`: los mobs esconden un cuerpo entero ahí).

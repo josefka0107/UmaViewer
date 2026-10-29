@@ -36,7 +36,7 @@ public class HandleManager : MonoBehaviour
         var camera = Camera.main;
         var poseModeOn = UmaViewerUI.Instance.PoseManager.PoseModeOn;
 
-        if (Input.GetKeyDown(KeyCode.Space))
+        if (Input.GetKeyDown(KeyCode.Space) && !UmaViewerUI.IsTyping)
         {
             IKMode = !IKMode;
             if (IKMode)

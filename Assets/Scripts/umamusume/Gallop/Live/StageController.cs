@@ -1218,8 +1218,17 @@ namespace Gallop.Live
             }
         }
 
+        /// <summary> Parent each timeline object had before the timeline first moved it. </summary>
+        private readonly Dictionary<GameObject, Transform> _originalParents = new Dictionary<GameObject, Transform>();
+
         private void ApplyObjectUpdate(GameObject gameObject, string name, ref ObjectUpdateInfo updateInfo)
         {
+            if (!_originalParents.TryGetValue(gameObject, out Transform originalParent))
+            {
+                originalParent = gameObject.transform.parent;
+                _originalParents[gameObject] = originalParent;
+            }
+
             {
                 gameObject.SetActive(updateInfo.renderEnable);
 
@@ -1227,8 +1236,10 @@ namespace Gallop.Live
                 switch (updateInfo.AttachTarget)
                 {
                     case AttachType.None:
-                        if (StageParentMap.TryGetValue(name, out Transform parentTransform))
-                            attach_transform = parentTransform;
+                        // Not attached: stay under the object's own parent. StageParentMap is never filled, and
+                        // detaching put 1181's shop pieces (counters, noren, floor shadows) at the main stage origin
+                        // instead of inside the shop 50 m below
+                        attach_transform = StageParentMap.TryGetValue(name, out Transform parentTransform) ? parentTransform : originalParent;
                         break;
                     case AttachType.Character:
                         // CharacterPosition is 1-based here (1181 attaches to 7 and 8 with 8 positions)

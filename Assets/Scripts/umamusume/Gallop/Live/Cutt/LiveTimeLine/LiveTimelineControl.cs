@@ -148,6 +148,7 @@ namespace Gallop.Live.Cutt
         public event Action RecordUma;
 
         public Dictionary<string, GameObject> StageObjectMap = new Dictionary<string, GameObject>();
+        private readonly HashSet<string> _missingObjectNames = new HashSet<string>();
 
         public float currentLiveTime
         {
@@ -2705,8 +2706,14 @@ namespace Gallop.Live.Cutt
                     continue;
                 }
 
-                if (StageObjectMap == null || !StageObjectMap.ContainsKey(objectEntry.name))
+                var stage = Director.instance ? Director.instance._stageController : null;
+                bool isUnit = stage != null && stage.StageObjectUnitMap.ContainsKey(objectEntry.name);
+                if (StageObjectMap == null || (!StageObjectMap.ContainsKey(objectEntry.name) && !isUnit))
+                {
+                    if (_missingObjectNames.Add(objectEntry.name))
+                        Debug.LogWarning($"[ObjectControl] {objectEntry.name} is in objectList but not in the stage");
                     continue;
+                }
 
                 FindTimelineKey(out var curKey, out var nextKey, keys, currentFrame);
 

@@ -1134,12 +1134,46 @@ namespace Gallop.Live
             AutoAttachMirrorReflectionComponents();
         }
 
+        /// <summary> Names already logged by <see cref="UpdateObject"/>, so each object is reported once. </summary>
+        private readonly HashSet<string> _loggedObjectNames = new HashSet<string>();
+
+        /// <summary>
+        /// Applies an objectList key to a stage object, or to every object of a stage unit (1181 moves the unit
+        /// "stage000_shop", which groups set000 and the shop's lights), like <see cref="UpdateTransform"/> does.
+        /// </summary>
         public void UpdateObject(ref ObjectUpdateInfo updateInfo)
         {
             if (updateInfo.data == null || string.IsNullOrEmpty(updateInfo.data.name))
                 return;
 
-            if (StageObjectMap.TryGetValue(updateInfo.data.name, out GameObject gameObject) && gameObject != null)
+            string name = updateInfo.data.name;
+            if (StageObjectUnitMap.TryGetValue(name, out StageObjectUnit unit) && unit.ChildObjects != null && unit.ChildObjects.Length > 0)
+            {
+                foreach (var child in unit.ChildObjects)
+                {
+                    if (child != null && StageObjectMap.TryGetValue(child.name, out GameObject childObject) && childObject != null)
+                        ApplyObjectUpdate(childObject, child.name, ref updateInfo);
+                }
+            }
+            else if (StageObjectMap.TryGetValue(name, out GameObject gameObject) && gameObject != null)
+            {
+                ApplyObjectUpdate(gameObject, name, ref updateInfo);
+            }
+            else
+            {
+                return;
+            }
+
+            if (_loggedObjectNames.Add(name))
+            {
+                var target = unit != null ? null : StageObjectMap[name];
+                Debug.Log($"[ObjectControl] {name}{(unit != null ? $" (unit of {unit.ChildObjects.Length})" : "")}: active={updateInfo.renderEnable} " +
+                          $"localPos={updateInfo.updateData.position} worldPos={(target ? target.transform.position.ToString() : "-")} parent={(target ? target.transform.parent?.name : "-")}");
+            }
+        }
+
+        private void ApplyObjectUpdate(GameObject gameObject, string name, ref ObjectUpdateInfo updateInfo)
+        {
             {
                 gameObject.SetActive(updateInfo.renderEnable);
 
@@ -1147,7 +1181,7 @@ namespace Gallop.Live
                 switch (updateInfo.AttachTarget)
                 {
                     case AttachType.None:
-                        if (StageParentMap.TryGetValue(updateInfo.data.name, out Transform parentTransform))
+                        if (StageParentMap.TryGetValue(name, out Transform parentTransform))
                             attach_transform = parentTransform;
                         break;
                     case AttachType.Character:

@@ -496,10 +496,44 @@ namespace Gallop.Live
             }
         }
 
+        /// <summary>
+        /// F2 logs the renderers under the mouse in the Game view, nearest first: the Scene view is hidden while a
+        /// live plays, and this names an object seen on screen (such as a shadow with no object above it).
+        /// </summary>
+        private void LogRenderersUnderMouse()
+        {
+            var camera = _mainCameraTransform ? _mainCameraTransform.GetComponent<Camera>() : Camera.main;
+            if (!camera) camera = Camera.main;
+            if (!camera) return;
+
+            var ray = camera.ScreenPointToRay(Input.mousePosition);
+            var hits = new List<(float distance, Renderer renderer)>();
+            foreach (var r in FindObjectsOfType<Renderer>())
+            {
+                if (!r.enabled || !r.gameObject.activeInHierarchy || (camera.cullingMask & (1 << r.gameObject.layer)) == 0) continue;
+                if (r.bounds.IntersectRay(ray, out float distance)) hits.Add((distance, r));
+            }
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"[Pick] frame {(int)(_liveCurrentTime * 60)} mouse {Input.mousePosition} camera {camera.name}@{camera.transform.position}: {hits.Count} renderers under the mouse");
+            foreach (var (distance, r) in hits.OrderBy(h => h.distance).Take(15))
+            {
+                string path = r.name;
+                for (var t = r.transform.parent; t != null && path.Length < 160; t = t.parent) path = t.name + "/" + path;
+                var mat = r.sharedMaterial;
+                sb.Append($"\n  {distance:0.00}m {path} [{r.GetType().Name}, shader {(mat && mat.shader ? mat.shader.name : "-")}, layer {r.gameObject.layer}, " +
+                          $"bounds {r.bounds.center}/{r.bounds.size}, shadows {r.shadowCastingMode}]");
+            }
+            Debug.Log(sb.ToString());
+        }
+
         bool isExit;
         void Update()
         {
             if (isExit) return;
+
+            if (Input.GetKeyDown(KeyCode.F2) && !UmaViewerUI.IsTyping)
+                LogRenderersUnderMouse();
 
             if (_isLiveSetup)
             {

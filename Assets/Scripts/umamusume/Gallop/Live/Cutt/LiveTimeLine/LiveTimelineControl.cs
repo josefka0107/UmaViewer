@@ -293,6 +293,7 @@ namespace Gallop.Live.Cutt
                 var container = obj.GetComponentInChildren<UmaContainer>();
                 if (container)
                 {
+                    LivePropsController.CreateRuntimeNodes(container.transform);
                     var animation = container.gameObject.AddComponent<Animation>();
                     Director.instance.charaAnims.Add(animation);
                 }

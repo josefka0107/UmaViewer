@@ -36,6 +36,38 @@ namespace Gallop.Live
 
         public int Count => _props.Count;
 
+        /// <summary>
+        /// Nodes that live body motions animate but no character asset has: the game creates them under each
+        /// character so the motion can move them (Tools/bundle-inspect/clipnodes.py lists them from all live clips).
+        /// Mic_Attach_00(_loc) carry stand mics and other props; the others are IK targets the viewer does not use yet.
+        /// </summary>
+        static readonly string[] RuntimeNodePaths =
+        {
+            "Mic_Attach_00",
+            "Position/Mic_Attach_00_loc",
+            "Position/Mic_Attach_00_loc/Mic_Node_L",
+            "Position/Mic_Attach_00_loc/Mic_Node_R",
+        };
+
+        /// <summary> Creates the missing runtime nodes under a character's animation root. </summary>
+        public static void CreateRuntimeNodes(Transform root)
+        {
+            foreach (var path in RuntimeNodePaths)
+            {
+                var parent = root;
+                foreach (var name in path.Split('/'))
+                {
+                    var child = parent.Find(name);
+                    if (!child)
+                    {
+                        child = new GameObject(name).transform;
+                        child.SetParent(parent, false);
+                    }
+                    parent = child;
+                }
+            }
+        }
+
         public LivePropsController(LiveTimelineData data, IList<UmaContainerCharacter> charas, int variationId = 0)
         {
             var groups = data.propsSettings?.propsDataGroup;
@@ -276,9 +308,8 @@ namespace Gallop.Live
         }
 
         /// <summary>
-        /// A joint of the character. Mic_Attach_00(_loc) exists in no character, prop or stage asset (the game creates
-        /// it), but each position has its own: 1004 puts every position's stand mic there with no offset. Taken as the
-        /// character's floor bone (Position, moved by the body motion), which also fits the counter offsets of 1181.
+        /// A joint of the character, including the runtime nodes the body motion moves (Mic_Attach_00, created by
+        /// <see cref="CreateRuntimeNodes"/>). If a motion has no such node, its Position bone is the closest fallback.
         /// </summary>
         Transform FindJoint(Transform chara, string jointName)
         {
@@ -287,7 +318,11 @@ namespace Gallop.Live
             var bones = chara.GetComponentsInChildren<Transform>(true);
             joint = bones.FirstOrDefault(t => t.name == jointName);
             if (!joint && jointName.StartsWith("Mic_Attach"))
+            {
                 joint = bones.FirstOrDefault(t => t.name == "Position") ?? chara;
+                if (_missingJoints.Add(jointName))
+                    Debug.LogWarning($"[LiveProps] Runtime node {jointName} missing, using {joint.name}");
+            }
             _jointCache[(chara, jointName)] = joint;
             return joint;
         }

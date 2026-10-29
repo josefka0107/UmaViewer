@@ -811,14 +811,54 @@ public string[] NormalBodyKeywords  = new[] { "skin", "body", "bdy", "face", "he
         CurrentOtherContainer = prop;
     }
 
+    /// <summary>
+    /// Costume id ("{body type:0000}_{sub:00}_{variant}", as the costume list builds it) of a common dress from
+    /// dress_data, using the first body variant that exists; null for character dresses or missing bodies.
+    /// </summary>
+    public static string CommonCostumeIdForDress(int dressId)
+    {
+        var row = UmaDatabaseController.Instance.DressData?.FirstOrDefault(r => Convert.ToInt32(r["id"]) == dressId);
+        if (row == null || Convert.ToInt32(row["chara_id"]) != 0) return null;
+
+        int bodyType = Convert.ToInt32(row["body_type"]);
+        int bodySub = Convert.ToInt32(row["body_type_sub"]);
+        string prefix = $"{UmaDatabaseController.BodyPath}bdy{bodyType:0000}_{bodySub:00}/pfb_bdy{bodyType:0000}_{bodySub:00}_";
+        var variant = UmaViewerMain.Instance.AbChara
+            .Where(a => a.Name.StartsWith(prefix))
+            .Select(a => Path.GetFileName(a.Name).Split('_'))
+            .Where(parts => parts.Length > 3)
+            .Select(parts => parts[3])
+            .OrderBy(v => v)
+            .FirstOrDefault();
+        return variant == null ? null : $"{bodyType:0000}_{bodySub:00}_{variant}";
+    }
+
+    /// <summary>
+    /// Dresses of the live's extra positions from its live settings, rows "id,13,extra index,dress id" (1181:
+    /// the eater wears dress 6, the winter tracksuit, and the cook dress 56, the Tresen-ken costume, as in the
+    /// game's own video). Read from the data, not the game code.
+    /// </summary>
+    public static Dictionary<int, int> LiveExtraDresses(LiveEntry live)
+    {
+        var dresses = new Dictionary<int, int>();
+        foreach (var row in live.LiveSettings)
+        {
+            if (row.Length > 3 && row[1].Trim() == "13" && int.TryParse(row[2], out int extra) && int.TryParse(row[3], out int dress))
+                dresses[extra] = dress;
+        }
+        return dresses;
+    }
+
     public void LoadLive(LiveEntry live, List<LiveCharacterSelect> characters)
     {
+        // Empty slots wear the live's default dress (1181: 101, Starting Future) instead of a fixed school uniform
+        string defaultCostume = CommonCostumeIdForDress(live.DefaultDress) ?? "0002_00_00";
         characters.ForEach(a =>
         {
             if (a.CharaEntry == null || string.IsNullOrEmpty(a.CostumeId))
             {
                 a.CharaEntry = Main.Characters[Random.Range(0, Main.Characters.Count / 2)];
-                a.CostumeId = "0002_00_00";
+                a.CostumeId = defaultCostume;
             }
         });
 
@@ -893,9 +933,21 @@ public string[] NormalBodyKeywords  = new[] { "skin", "body", "bdy", "face", "he
                         Debug.LogWarning(
                             $"actual member count is {actualMemberCount} current {liveCharacters.Count}");
 
+                        var extraDresses = LiveExtraDresses(live);
                         var expandedCharacters = new List<LiveCharacterLoadData>();
                         for (int i = 0; i < actualMemberCount; i++)
-                            expandedCharacters.Add(liveCharacters[i % liveCharacters.Count]);
+                        {
+                            var member = liveCharacters[i % liveCharacters.Count];
+                            int extra = i - Mathf.Max(live.MemberCount, liveCharacters.Count);
+                            int dress = 0;
+                            string costume = extra >= 0 && extraDresses.TryGetValue(extra, out dress) ? CommonCostumeIdForDress(dress) : null;
+                            if (costume != null)
+                            {
+                                Debug.Log($"[LiveDress] position {i} (extra {extra}): {member.CharaEntry?.Id} wears dress {dress} as {costume}");
+                                member = new LiveCharacterLoadData { CharaEntry = member.CharaEntry, CostumeId = costume, HeadCostumeId = member.HeadCostumeId };
+                            }
+                            expandedCharacters.Add(member);
+                        }
 
                         liveCharacters = expandedCharacters;
                     }

@@ -67,3 +67,6 @@ Thumbs.db
 
 # Contains machine-specific game paths and preferences
 /Config.json
+
+# Python caches of Tools/
+__pycache__/

@@ -867,6 +867,11 @@ public class UmaViewerUI : MonoBehaviour
 
     /// <summary> True: while picking a live member, the character list only shows characters with vocals for the song. </summary>
     public bool OnlyVoicedCharas = false;
+    /// <summary>
+    /// True: a live's extra positions wear the dress its settings give them (1181: tracksuit, shop costume) and
+    /// empty slots its default dress, as in the game. False: extras repeat their member's selected costume.
+    /// </summary>
+    public bool UseGameDresses = true;
     private Toggle onlyVoicedToggle;
     private bool liveCharacterFilterApplied;
 
@@ -893,6 +898,14 @@ public class UmaViewerUI : MonoBehaviour
                 OnlyVoicedCharas = value;
                 ApplyLiveCharacterFilter();
             });
+
+            var gameDressesToggle = Instantiate(stageToggle, stageToggle.transform.parent);
+            gameDressesToggle.name = "GameDressesToggle";
+            gameDressesToggle.onValueChanged = new Toggle.ToggleEvent();
+            gameDressesToggle.isOn = UseGameDresses;
+            ((RectTransform)gameDressesToggle.transform).anchoredPosition = ((RectTransform)stageToggle.transform).anchoredPosition + new Vector2(160, 40);
+            gameDressesToggle.GetComponentInChildren<Text>().text = "Game Dresses";
+            gameDressesToggle.onValueChanged.AddListener(value => UseGameDresses = value);
         }
 
         var playButton = LiveSelectPannel.transform.Find("PlayButtton")?.GetComponent<Button>();

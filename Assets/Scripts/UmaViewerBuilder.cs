@@ -852,7 +852,7 @@ public string[] NormalBodyKeywords  = new[] { "skin", "body", "bdy", "face", "he
     public void LoadLive(LiveEntry live, List<LiveCharacterSelect> characters)
     {
         // Empty slots wear the live's default dress (1181: 101, Starting Future) instead of a fixed school uniform
-        string defaultCostume = CommonCostumeIdForDress(live.DefaultDress) ?? "0002_00_00";
+        string defaultCostume = (UI.UseGameDresses ? CommonCostumeIdForDress(live.DefaultDress) : null) ?? "0002_00_00";
         characters.ForEach(a =>
         {
             if (a.CharaEntry == null || string.IsNullOrEmpty(a.CostumeId))
@@ -933,7 +933,7 @@ public string[] NormalBodyKeywords  = new[] { "skin", "body", "bdy", "face", "he
                         Debug.LogWarning(
                             $"actual member count is {actualMemberCount} current {liveCharacters.Count}");
 
-                        var extraDresses = LiveExtraDresses(live);
+                        var extraDresses = UI.UseGameDresses ? LiveExtraDresses(live) : new Dictionary<int, int>();
                         var expandedCharacters = new List<LiveCharacterLoadData>();
                         for (int i = 0; i < actualMemberCount; i++)
                         {

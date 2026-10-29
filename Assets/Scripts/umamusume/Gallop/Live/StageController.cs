@@ -280,6 +280,7 @@ namespace Gallop.Live
             ctl.OnUpdateTransform -= UpdateTransform;
             ctl.OnUpdateObject -= UpdateObject;
             ctl.OnUpdateBgColor1 -= UpdateBgColor1;
+            ctl.OnUpdateStageBgColor1 -= UpdateStageBgColor1;
             ctl.OnUpdateBgColor2 -= UpdateBgColor2;
             ctl.OnEnvironmentMirror -= UpdateEnvironemntMirror;
             ctl.OnUpdateMirrorReflection -= UpdateMirrorReflection;
@@ -288,6 +289,7 @@ namespace Gallop.Live
             ctl.OnUpdateTransform += UpdateTransform;
             ctl.OnUpdateObject += UpdateObject;
             ctl.OnUpdateBgColor1 += UpdateBgColor1;
+            ctl.OnUpdateStageBgColor1 += UpdateStageBgColor1;
             ctl.OnUpdateBgColor2 += UpdateBgColor2;
             ctl.OnEnvironmentMirror += UpdateEnvironemntMirror;
             ctl.OnUpdateMirrorReflection += UpdateMirrorReflection;
@@ -873,6 +875,7 @@ namespace Gallop.Live
             ctl.OnUpdateTransform -= UpdateTransform;
             ctl.OnUpdateObject -= UpdateObject;
             ctl.OnUpdateBgColor1 -= UpdateBgColor1;
+            ctl.OnUpdateStageBgColor1 -= UpdateStageBgColor1;
             ctl.OnUpdateBgColor2 -= UpdateBgColor2;
             ctl.OnEnvironmentMirror -= UpdateEnvironemntMirror;
             ctl.OnUpdateMirrorReflection -= UpdateMirrorReflection;
@@ -1303,10 +1306,24 @@ namespace Gallop.Live
 
         private void UpdateBgColor1(ref BgColor1UpdateInfo updateInfo)
         {
+            UpdateBgColor1(ref updateInfo, allowAllEligibleFallback: true);
+        }
+
+        /// <summary>
+        /// bgColor1 lists named after stage objects: color only what the name matches, never every eligible
+        /// renderer, since names like "BgBL" match nothing on purpose here.
+        /// </summary>
+        private void UpdateStageBgColor1(ref BgColor1UpdateInfo updateInfo)
+        {
+            UpdateBgColor1(ref updateInfo, allowAllEligibleFallback: false);
+        }
+
+        private void UpdateBgColor1(ref BgColor1UpdateInfo updateInfo, bool allowAllEligibleFallback)
+        {
             if (!_enableBgColorDriver)
                 return;
 
-            var targets = ResolveBgColorRenderers(updateInfo.TimelineName, wantBgColor2Style: false);
+            var targets = ResolveBgColorRenderers(updateInfo.TimelineName, wantBgColor2Style: false, allowAllEligibleFallback);
             bool report = updateInfo.TimelineName != null && _bgColor1Reported.Add(updateInfo.TimelineName);
             if (targets == null || targets.Count == 0)
             {

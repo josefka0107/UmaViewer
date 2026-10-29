@@ -79,6 +79,11 @@ namespace Gallop.Live.Cutt
         public event EnvironmentMirrorDelegate OnEnvironmentMirror;
 
         public event BgColor1UpdateInfoDelegate OnUpdateBgColor1;
+        /// <summary>
+        /// bgColor1 lists named after stage objects (1181: cutt000_sphere, cutt000_plane, petals...). Only the stage
+        /// handles them: the character handler colors every character regardless of the name.
+        /// </summary>
+        public event BgColor1UpdateInfoDelegate OnUpdateStageBgColor1;
 
         public event BgColor2UpdateInfoDelegate OnUpdateBgColor2;
 
@@ -1943,7 +1948,8 @@ namespace Gallop.Live.Cutt
                 {
                     continue;
                 }
-                else if (!validBgColorNames.Contains(sheet.bgColor1List[i].name))
+                bool isCharaColor = validBgColorNames.Contains(sheet.bgColor1List[i].name);
+                if (!isCharaColor && OnUpdateStageBgColor1 == null)
                 {
                     continue;
                 }
@@ -2005,7 +2011,10 @@ namespace Gallop.Live.Cutt
                     updateInfo.NextColor = updateInfo.CurrentColor;
                     updateInfo.NextFlags = updateInfo.CurrentFlags;
                 }
-                OnUpdateBgColor1?.Invoke(ref updateInfo);
+                if (isCharaColor)
+                    OnUpdateBgColor1?.Invoke(ref updateInfo);
+                else
+                    OnUpdateStageBgColor1?.Invoke(ref updateInfo);
             }
         }
 

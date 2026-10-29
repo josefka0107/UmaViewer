@@ -36,6 +36,13 @@ namespace Gallop.Live
 
         public int Count => _props.Count;
 
+        /// <summary> Root of the prop with this per-position index, or null (effects can attach to props). </summary>
+        public Transform GetPropRoot(int position, int propIndex)
+        {
+            var prop = _props.FirstOrDefault(p => p.Position == position && p.PropIndex == propIndex && p.Root);
+            return prop?.Root.transform;
+        }
+
         /// <summary>
         /// Nodes that live body motions animate but no character asset has: the game creates them under each
         /// character so the motion can move them (Tools/bundle-inspect/clipnodes.py lists them from all live clips).

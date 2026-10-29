@@ -377,11 +377,10 @@ namespace Gallop.Live
 
             SetupLaserObject(ctl.data);
 
-            if (_laserControllerArray != null && _laserControllerArray.Length > 0)
-            {
-                _laserSetupDone = true;
-                Debug.Log("[StageController] Laser setup done. count=" + _laserControllerArray.Length);
-            }
+            // One attempt per timeline: lives without lasers (1054, 1154...) used to retry every frame, which
+            // rebuilt the stage color cache over all renderers each time.
+            _laserSetupDone = true;
+            Debug.Log("[StageController] Laser setup done. count=" + (_laserControllerArray?.Length ?? 0));
         }
 
         private void SetupLaserObject(LiveTimelineData liveTimelineData)

@@ -23,6 +23,8 @@ namespace Gallop.Live
             public Transform Chara;
             public LiveTimelineKeyPropsAttachData AttachKey;
             public bool Shown;
+            public float ShownFrame;
+            public bool Diagnosed;
         }
 
         readonly List<PropInstance> _props = new List<PropInstance>();
@@ -199,7 +201,13 @@ namespace Gallop.Live
                 if (visible && !prop.Shown)
                 {
                     prop.Shown = true;
+                    prop.ShownFrame = frame;
                     Debug.Log($"[LiveProps] {prop.Root.name} at position {prop.Position} shown at frame {(int)frame} on {prop.Root.transform.parent?.name}");
+                }
+                if (visible && !prop.Diagnosed && frame - prop.ShownFrame >= 60)
+                {
+                    prop.Diagnosed = true;
+                    LogDiagnostics(prop, frame);
                 }
 
                 if (visible && visibility.IsApplyAnimation && visibility.AnimationClip)
@@ -210,6 +218,23 @@ namespace Gallop.Live
                     clip.SampleAnimation(prop.Root, time);
                 }
             }
+        }
+
+        /// <summary> Where a shown prop is and whether anything renders it, to tell placement from rendering problems. </summary>
+        static void LogDiagnostics(PropInstance prop, float frame)
+        {
+            var t = prop.Root.transform;
+            var hip = prop.Chara.GetComponentsInChildren<Transform>().FirstOrDefault(b => b.name == "Hip");
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"[LiveProps] diag {prop.Root.name}@{prop.Position} frame {(int)frame}: activeInHierarchy={prop.Root.activeInHierarchy} ");
+            sb.Append($"pos={t.position} lossyScale={t.lossyScale} parent={t.parent?.name}@{t.parent?.position} hip={hip?.position} chara={prop.Chara.position}");
+            foreach (var r in prop.Root.GetComponentsInChildren<Renderer>(true))
+            {
+                sb.Append($"\n    {r.GetType().Name} {r.name}: enabled={r.enabled} active={r.gameObject.activeInHierarchy} isVisible={r.isVisible} layer={r.gameObject.layer} bounds={r.bounds.center}/{r.bounds.size}");
+                foreach (var m in r.sharedMaterials)
+                    sb.Append(m ? $" | {m.name} shader={m.shader?.name} supported={m.shader?.isSupported} queue={m.renderQueue}" : " | <null material>");
+            }
+            Debug.Log(sb.ToString());
         }
 
         void Attach(PropInstance prop, string jointName, Vector3 position, Vector3 rotation, Vector3 scale)

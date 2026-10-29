@@ -82,7 +82,34 @@ namespace Gallop.Live
                 if (sheet.propsAttachList != null)
                     _attachLists.AddRange(sheet.propsAttachList.Where(l => l?.keys != null && (!l._applyVariation || l._variationId == variationId)));
             }
+            // Props each position's lists name by id; keys with id -1 target those (or every prop when none are
+            // named, as in 1025), so -1 does not show the props of other variations
+            foreach (var key in _propsLists.SelectMany(l => l.keys.thisList).Where(k => k.propsID >= 0))
+                AddNamedProp(key.settingFlags, key.propsID);
+            foreach (var key in _attachLists.SelectMany(l => l.keys.thisList).Where(k => k._propsId >= 0))
+                AddNamedProp(key._settingFlags, key._propsId);
+
             Debug.Log($"[LiveProps] {_props.Count} props, {_propsLists.Count} visibility lists, {_attachLists.Count} attach lists (variation {variationId})");
+        }
+
+        readonly Dictionary<int, HashSet<int>> _namedProps = new Dictionary<int, HashSet<int>>();
+
+        void AddNamedProp(int flags, int propIndex)
+        {
+            for (int position = 0; position < 32; position++)
+            {
+                if (!HasPosition(flags, position)) continue;
+                if (!_namedProps.TryGetValue(position, out var named))
+                    _namedProps[position] = named = new HashSet<int>();
+                named.Add(propIndex);
+            }
+        }
+
+        /// <summary> Whether a key's prop id (-1: all props of the position) refers to <paramref name="prop"/>. </summary>
+        bool Targets(int keyPropIndex, PropInstance prop)
+        {
+            if (keyPropIndex >= 0) return keyPropIndex == prop.PropIndex;
+            return !_namedProps.TryGetValue(prop.Position, out var named) || named.Contains(prop.PropIndex);
         }
 
         /// <summary> Condition groups: any group may match; inside a group all or any condition must match. </summary>
@@ -125,13 +152,12 @@ namespace Gallop.Live
             {
                 if (!prop.Root) continue;
 
-                // The latest key that targets this prop wins; propsID -1 targets every prop of the positions
+                // The latest key that targets this prop wins
                 LiveTimelineKeyPropsData visibility = null;
                 foreach (var list in _propsLists)
                 {
                     var key = CurrentKey(list.keys.thisList, frame);
-                    if (key == null || !HasPosition(key.settingFlags, prop.Position)) continue;
-                    if (key.propsID != prop.PropIndex && !(key.propsID < 0 && !key.rendererEnable)) continue;
+                    if (key == null || !HasPosition(key.settingFlags, prop.Position) || !Targets(key.propsID, prop)) continue;
                     if (visibility == null || key.frame >= visibility.frame) visibility = key;
                 }
 
@@ -139,7 +165,7 @@ namespace Gallop.Live
                 foreach (var list in _attachLists)
                 {
                     var key = CurrentKey(list.keys.thisList, frame);
-                    if (key == null || key._propsId != prop.PropIndex || !HasPosition(key._settingFlags, prop.Position)) continue;
+                    if (key == null || string.IsNullOrEmpty(key._attachJointName) || !HasPosition(key._settingFlags, prop.Position) || !Targets(key._propsId, prop)) continue;
                     if (attach == null || key.frame >= attach.frame) attach = key;
                 }
 
@@ -149,7 +175,7 @@ namespace Gallop.Live
                     prop.AttachKey = attach;
                 }
 
-                bool visible = visibility != null && visibility.propsID == prop.PropIndex && visibility.rendererEnable;
+                bool visible = visibility != null && visibility.rendererEnable;
                 if (prop.Root.activeSelf != visible) prop.Root.SetActive(visible);
                 if (visible && !prop.Shown)
                 {

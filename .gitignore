@@ -70,3 +70,5 @@ Thumbs.db
 
 # Python caches of Tools/
 __pycache__/
+# Bundles decrypted by Tools/bundle-inspect (game data, keep out of git)
+Tools/bundle-inspect/bundles/

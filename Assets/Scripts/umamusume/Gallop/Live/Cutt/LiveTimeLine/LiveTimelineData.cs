@@ -53,6 +53,8 @@ namespace Gallop.Live.Cutt
             public string[] attachJointNames;
             public int attachJointNameCount;
             public bool hasShadow;
+            /// <summary> Whether the prop scales with the character's height (stand mics do not). </summary>
+            public bool isInfluenceOfCharaHeight;
             public LiveTimelinePropsSettings.PropsConditionGroup[] propsConditionGroup;
             public int propsConditionGroupCount;
         }

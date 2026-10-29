@@ -22,6 +22,7 @@ namespace Gallop.Live
             public int Position;
             public Transform Chara;
             public LiveTimelineKeyPropsAttachData AttachKey;
+            public bool ScalesWithChara;
             public bool Shown;
             public float ShownFrame;
             public bool Diagnosed;
@@ -69,8 +70,18 @@ namespace Gallop.Live
 
                     var root = Object.Instantiate(prefab, chara.transform);
                     root.name = prefab.name;
+
+                    // Stand mics come folded; raise them to the head while the character still stands in its load pose
+                    var head = chara.GetComponentsInChildren<Transform>().FirstOrDefault(b => b.name == "Head");
+                    foreach (var adjustable in root.GetComponentsInChildren<Props>(true))
+                        adjustable.Adjust(head);
+
                     root.SetActive(false);
-                    var prop = new PropInstance { Root = root, PropIndex = propIndex, Position = position, Chara = chara.transform };
+                    var prop = new PropInstance
+                    {
+                        Root = root, PropIndex = propIndex, Position = position, Chara = chara.transform,
+                        ScalesWithChara = group.isInfluenceOfCharaHeight
+                    };
                     Attach(prop, group.attachJointNames?.FirstOrDefault(), Vector3.zero, Vector3.zero, Vector3.one);
                     _props.Add(prop);
                 }
@@ -228,6 +239,10 @@ namespace Gallop.Live
             var sb = new System.Text.StringBuilder();
             sb.Append($"[LiveProps] diag {prop.Root.name}@{prop.Position} frame {(int)frame}: activeInHierarchy={prop.Root.activeInHierarchy} ");
             sb.Append($"pos={t.position} lossyScale={t.lossyScale} parent={t.parent?.name}@{t.parent?.position} hip={hip?.position} chara={prop.Chara.position}");
+            var head = prop.Chara.GetComponentsInChildren<Transform>().FirstOrDefault(b => b.name == "Head");
+            sb.Append($" head={head?.position} propsComponent={prop.Root.GetComponentInChildren<Props>(true) != null}");
+            foreach (var node in prop.Root.GetComponentsInChildren<Transform>(true).Where(n => n.name.EndsWith("_node")))
+                sb.Append($" {node.name}={node.position}");
             foreach (var r in prop.Root.GetComponentsInChildren<Renderer>(true))
             {
                 sb.Append($"\n    {r.GetType().Name} {r.name}: enabled={r.enabled} active={r.gameObject.activeInHierarchy} isVisible={r.isVisible} layer={r.gameObject.layer} bounds={r.bounds.center}/{r.bounds.size}");
@@ -251,6 +266,12 @@ namespace Gallop.Live
             prop.Root.transform.SetParent(joint, false);
             prop.Root.transform.localPosition = position;
             prop.Root.transform.localRotation = Quaternion.Euler(rotation);
+            if (!prop.ScalesWithChara)
+            {
+                // The Position bone carries the character's height scale; keep such props at their real size
+                var parentScale = joint.lossyScale;
+                scale = new Vector3(scale.x / parentScale.x, scale.y / parentScale.y, scale.z / parentScale.z);
+            }
             prop.Root.transform.localScale = scale;
         }
 

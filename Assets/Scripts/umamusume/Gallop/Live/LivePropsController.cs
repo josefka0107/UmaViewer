@@ -43,10 +43,19 @@ namespace Gallop.Live
         /// </summary>
         static readonly string[] RuntimeNodePaths =
         {
+            // Props (1004, 1028, 1156)
             "Mic_Attach_00",
             "Position/Mic_Attach_00_loc",
             "Position/Mic_Attach_00_loc/Mic_Node_L",
             "Position/Mic_Attach_00_loc/Mic_Node_R",
+            // Foot IK targets (16 lives, e.g. 1001, 1025, 1181)
+            "Position/Foot_L_Target",
+            "Position/Foot_L_Pole",
+            "Position/Foot_R_Target",
+            "Position/Foot_R_Pole",
+            // Hand IK targets (1001, 1010)
+            "Position/Wrist_R_Target/Wrist_L_Target",
+            "Position/Wrist_L_Target/Wrist_R_Target",
         };
 
         /// <summary> Creates the missing runtime nodes under a character's animation root. </summary>

@@ -22,12 +22,14 @@ namespace Gallop.Live
             public int Position;
             public Transform Chara;
             public LiveTimelineKeyPropsAttachData AttachKey;
+            public bool Shown;
         }
 
         readonly List<PropInstance> _props = new List<PropInstance>();
         readonly List<LiveTimelinePropsData> _propsLists = new List<LiveTimelinePropsData>();
         readonly List<LiveTimelinePropsAttachData> _attachLists = new List<LiveTimelinePropsAttachData>();
         readonly Dictionary<(Transform, string), Transform> _jointCache = new Dictionary<(Transform, string), Transform>();
+        readonly HashSet<string> _missingJoints = new HashSet<string>();
 
         public int Count => _props.Count;
 
@@ -149,6 +151,11 @@ namespace Gallop.Live
 
                 bool visible = visibility != null && visibility.propsID == prop.PropIndex && visibility.rendererEnable;
                 if (prop.Root.activeSelf != visible) prop.Root.SetActive(visible);
+                if (visible && !prop.Shown)
+                {
+                    prop.Shown = true;
+                    Debug.Log($"[LiveProps] {prop.Root.name} at position {prop.Position} shown at frame {(int)frame} on {prop.Root.transform.parent?.name}");
+                }
 
                 if (visible && visibility.IsApplyAnimation && visibility.AnimationClip)
                 {
@@ -167,7 +174,8 @@ namespace Gallop.Live
             var joint = FindJoint(prop.Chara, jointName);
             if (!joint)
             {
-                Debug.LogWarning($"[LiveProps] Joint {jointName} not found for {prop.Root.name} at position {prop.Position}");
+                if (_missingJoints.Add(jointName))
+                    Debug.LogWarning($"[LiveProps] Joint {jointName} not found (first seen on {prop.Root.name} at position {prop.Position})");
                 return;
             }
             prop.Root.transform.SetParent(joint, false);
@@ -176,13 +184,19 @@ namespace Gallop.Live
             prop.Root.transform.localScale = scale;
         }
 
-        /// <summary> A joint of the character, or of the stage (Mic_Attach_00 is used with stage-sized offsets). </summary>
+        /// <summary>
+        /// A joint of the character. Mic_Attach_* exists in no character, prop or stage asset (the game creates it),
+        /// and its keys carry stage-sized offsets such as (4.11, 0.75, 1.47) for a bowl left on the counter in 1181,
+        /// so it is taken as the stage root.
+        /// </summary>
         Transform FindJoint(Transform chara, string jointName)
         {
             if (_jointCache.TryGetValue((chara, jointName), out var joint) && joint) return joint;
 
             joint = chara.GetComponentsInChildren<Transform>(true).FirstOrDefault(t => t.name == jointName)
                 ?? GameObject.Find(jointName)?.transform;
+            if (!joint && jointName.StartsWith("Mic_Attach"))
+                joint = Director.instance._stageController ? Director.instance._stageController.transform : null;
             _jointCache[(chara, jointName)] = joint;
             return joint;
         }

@@ -52,15 +52,15 @@ namespace Gallop.Live
                     var group = groups[i];
                     if (group == null || !MatchesConditions(group, position, chara)) continue;
                     int propIndex = localIndex++;
-                    if (!group.isCharaProps) continue;
 
                     if (!prefabs.TryGetValue(i, out var prefab))
                     {
-                        string name = $"prop{group.charaPropsMajorId}_{group.charaPropsMinorId:00}";
-                        if (UmaViewerMain.Instance.AbList.TryGetValue($"3d/chara/prop/{name}/pfb_chr_{name}", out var entry))
+                        var paths = PrefabPaths(group).ToList();
+                        var entry = paths.Select(p => UmaViewerMain.Instance.AbList.TryGetValue(p, out var e) ? e : null).FirstOrDefault(e => e != null);
+                        if (entry != null)
                             prefab = entry.Get<GameObject>();
                         else
-                            Debug.LogWarning($"[LiveProps] {name} not found");
+                            Debug.LogWarning($"[LiveProps] Prop not found: {string.Join(", ", paths)}");
                         prefabs[i] = prefab;
                     }
                     if (!prefab) continue;
@@ -110,6 +110,25 @@ namespace Gallop.Live
         {
             if (keyPropIndex >= 0) return keyPropIndex == prop.PropIndex;
             return !_namedProps.TryGetValue(prop.Position, out var named) || named.Contains(prop.PropIndex);
+        }
+
+        /// <summary>
+        /// Asset candidates, best first. Character props live in 3d/chara/{toonprop,richprop,prop} depending on the
+        /// group's flags; the others are common live props named by propsName (1004: "001" is a stand mic).
+        /// </summary>
+        static IEnumerable<string> PrefabPaths(LiveTimelinePropsSettings.PropsDataGroup group)
+        {
+            if (!group.isCharaProps)
+            {
+                if (!string.IsNullOrEmpty(group.propsName))
+                    yield return $"3d/env/live/common/prop/pfb_env_live_cmn_prop{group.propsName}";
+                yield break;
+            }
+
+            string id = $"{group.charaPropsMajorId}_{group.charaPropsMinorId:00}";
+            if (group.IsToonProp) yield return $"3d/chara/toonprop/toon_prop{id}/pfb_toon_prop{id}";
+            if (group.IsRichProp) yield return $"3d/chara/richprop/rich_prop{id}/pfb_rich_prop{id}";
+            yield return $"3d/chara/prop/prop{id}/pfb_chr_prop{id}";
         }
 
         /// <summary> Condition groups: any group may match; inside a group all or any condition must match. </summary>
@@ -211,18 +230,18 @@ namespace Gallop.Live
         }
 
         /// <summary>
-        /// A joint of the character. Mic_Attach_* exists in no character, prop or stage asset (the game creates it),
-        /// and its keys carry stage-sized offsets such as (4.11, 0.75, 1.47) for a bowl left on the counter in 1181,
-        /// so it is taken as the stage root.
+        /// A joint of the character. Mic_Attach_00(_loc) exists in no character, prop or stage asset (the game creates
+        /// it), but each position has its own: 1004 puts every position's stand mic there with no offset. Taken as the
+        /// character's floor bone (Position, moved by the body motion), which also fits the counter offsets of 1181.
         /// </summary>
         Transform FindJoint(Transform chara, string jointName)
         {
             if (_jointCache.TryGetValue((chara, jointName), out var joint) && joint) return joint;
 
-            joint = chara.GetComponentsInChildren<Transform>(true).FirstOrDefault(t => t.name == jointName)
-                ?? GameObject.Find(jointName)?.transform;
+            var bones = chara.GetComponentsInChildren<Transform>(true);
+            joint = bones.FirstOrDefault(t => t.name == jointName);
             if (!joint && jointName.StartsWith("Mic_Attach"))
-                joint = Director.instance._stageController ? Director.instance._stageController.transform : null;
+                joint = bones.FirstOrDefault(t => t.name == "Position") ?? chara;
             _jointCache[(chara, jointName)] = joint;
             return joint;
         }

@@ -41,8 +41,7 @@ for pos in range(POSITIONS):
     for i, g in enumerate(groups):
         if not matches(g, pos):
             continue
-        if g["isCharaProps"]:
-            props.append((i, pos, local))
+        props.append((i, pos, local))
         local += 1
 plists = [l for l in w["propsList"] if not l["_applyVariation"] or l["_variationId"] == VARIATION]
 alists = [l for l in w["propsAttachList"] if not l["_applyVariation"] or l["_variationId"] == VARIATION]
@@ -92,7 +91,8 @@ def state(i, pos, f, li):
 
 print(f"son{MUSIC} variation {VARIATION}, {POSITIONS} positions, named: {named}")
 for i, pos, li in props:
-    name = f"prop{groups[i]['charaPropsMajorId']}_{groups[i]['charaPropsMinorId']:02}@{pos}"
+    g = groups[i]
+    name = (f"prop{g['charaPropsMajorId']}_{g['charaPropsMinorId']:02}" if g["isCharaProps"] else f"cmn_prop{g['propsName']}") + f"@{pos}"
     prev, spans = None, []
     for f in range(0, int(d["timeLength"] * 60), 10):
         s = state(i, pos, f, li)

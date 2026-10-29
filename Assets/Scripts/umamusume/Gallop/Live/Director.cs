@@ -75,6 +75,7 @@ namespace Gallop.Live
         private bool _lateTimelineAppliedThisFrame;
         private LivePropsController _propsController;
         private LiveEffectsController _effectsController;
+        private LiveAdditionalLightController _additionalLightController;
 
         public Transform MainCameraTransform => _mainCameraTransform;
 
@@ -222,6 +223,16 @@ namespace Gallop.Live
             {
                 Debug.LogException(e);
                 _effectsController = null;
+            }
+
+            try
+            {
+                _additionalLightController = new LiveAdditionalLightController(_liveTimelineControl.data, transform);
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+                _additionalLightController = null;
             }
 
             _liveTimelineControl.OnUpdateLipSync += delegate (LiveTimelineKeyIndex keyData_, float liveTime_)
@@ -516,6 +527,19 @@ namespace Gallop.Live
                 {
                     Debug.LogException(e);
                     _effectsController = null;
+                }
+            }
+
+            if (_additionalLightController != null)
+            {
+                try
+                {
+                    _additionalLightController.AlterUpdate(_liveCurrentTime * 60f);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogException(e);
+                    _additionalLightController = null;
                 }
             }
         }

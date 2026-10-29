@@ -467,6 +467,7 @@ namespace Gallop.Live.Cutt
         [SerializeField] public List<LiveTimelinePropsData> propsList;
         [SerializeField] public List<LiveTimelinePropsAttachData> propsAttachList;
         [SerializeField] public List<LiveTimelineEffectData> effectList;
+        [SerializeField] public List<LiveTimelineAdditionalLightData> AdditionalLightList;
         [SerializeField] public List<LiveTimelineMobCyalumeControlData> mobControlList;
         [SerializeField] public List<LiveTimelineMobCyalumeControlData> cyalumeControlList;
 

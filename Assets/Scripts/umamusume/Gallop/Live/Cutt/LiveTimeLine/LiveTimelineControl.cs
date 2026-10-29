@@ -410,6 +410,7 @@ namespace Gallop.Live.Cutt
 
                 AlterUpdate_TransformControl(ws, _currentFrame);
                 AlterUpdate_ObjectControl(ws, _currentFrame);
+                AlterUpdate_AnimationControl(ws, _currentFrame);
                 AlterUpdate_MobControl(ws, _currentFrame);
                 AlterUpdate_CyalumeControl(ws, _currentFrame);
                 AlterUpdate_BlinkLight(ws, _currentFrame);
@@ -487,7 +488,7 @@ namespace Gallop.Live.Cutt
                 this.OnUpdateFacial(updateInfo, liveTime, i + 1);
             }
         }
-        private void AlterUpdate_AnimationControl(LiveTimelineWorkSheet sheet, int currentFrame)
+        private void AlterUpdate_AnimationControl(LiveTimelineWorkSheet sheet, float currentFrame)
         {
         if (OnUpdateAnimation == null)
             return;

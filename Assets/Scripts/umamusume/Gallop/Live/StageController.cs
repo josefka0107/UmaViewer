@@ -285,6 +285,7 @@ namespace Gallop.Live
             ctl.OnEnvironmentMirror -= UpdateEnvironemntMirror;
             ctl.OnUpdateMirrorReflection -= UpdateMirrorReflection;
             ctl.OnUpdateLaser -= UpdateLaser;
+            ctl.OnUpdateAnimation -= UpdateStageAnimation;
 
             ctl.OnUpdateTransform += UpdateTransform;
             ctl.OnUpdateObject += UpdateObject;
@@ -294,8 +295,10 @@ namespace Gallop.Live
             ctl.OnEnvironmentMirror += UpdateEnvironemntMirror;
             ctl.OnUpdateMirrorReflection += UpdateMirrorReflection;
             ctl.OnUpdateLaser += UpdateLaser;
+            ctl.OnUpdateAnimation += UpdateStageAnimation;
 
             _laserSetupDone = false;
+            _stageAnimationCache.Clear();
             _laserSetupTimelineControl = ctl;
             _laserDataIndexMap.Clear();
 
@@ -626,6 +629,68 @@ namespace Gallop.Live
             return null;
         }
 
+        private readonly Dictionary<string, Animation> _stageAnimationCache = new Dictionary<string, Animation>();
+
+        /// <summary>
+        /// The worksheet's animationList: plays the legacy Animation clips of stage objects (1054's scissor lift
+        /// under the rising platform, handrails, light rigs) at offsetTime + elapsed * speed, the clip picked by
+        /// animationID among the Animation's clips. The game's AnimationObjectController on those objects has no
+        /// fields; the prefabs play the clip once on their own otherwise, so the lift stayed folded.
+        /// </summary>
+        private void UpdateStageAnimation(ref AnimationUpdateInfo updateInfo)
+        {
+            var name = updateInfo.data?.name;
+            if (string.IsNullOrEmpty(name))
+                return;
+
+            if (!_stageAnimationCache.TryGetValue(name, out var animation))
+            {
+                animation = GetComponentsInChildren<Animation>(true).FirstOrDefault(a => a.gameObject.name == name || a.gameObject.name == name + "(Clone)");
+                _stageAnimationCache[name] = animation;
+                if (animation == null)
+                {
+                    Debug.LogWarning($"[StageAnimation] {name} is in animationList but has no Animation in the stage");
+                }
+                else
+                {
+                    animation.playAutomatically = false;
+                    animation.Stop();
+                    animation.enabled = false;
+                    Debug.Log($"[StageAnimation] {name}: {animation.GetClipCount()} clips");
+                }
+            }
+            if (animation == null)
+                return;
+
+            AnimationClip clip = null;
+            int index = 0;
+            foreach (AnimationState state in animation)
+            {
+                if (index++ == updateInfo.animationId)
+                {
+                    clip = state.clip;
+                    break;
+                }
+            }
+            if (clip == null || clip.length <= 0)
+                return;
+
+            float time = updateInfo.offsetTime + updateInfo.progressTime * updateInfo.speed;
+            switch (updateInfo.wrapMode)
+            {
+                case WrapMode.Loop:
+                    time = Mathf.Repeat(time, clip.length);
+                    break;
+                case WrapMode.PingPong:
+                    time = Mathf.PingPong(time, clip.length);
+                    break;
+                default:
+                    time = Mathf.Clamp(time, 0, clip.length);
+                    break;
+            }
+            clip.SampleAnimation(animation.gameObject, time);
+        }
+
         private void UpdateLaser(ref LaserUpdateInfo updateInfo)
         {
             if (_laserControllerArray == null)
@@ -879,6 +944,7 @@ namespace Gallop.Live
             ctl.OnEnvironmentMirror -= UpdateEnvironemntMirror;
             ctl.OnUpdateMirrorReflection -= UpdateMirrorReflection;
             ctl.OnUpdateLaser -= UpdateLaser;
+            ctl.OnUpdateAnimation -= UpdateStageAnimation;
         }
 
         private void AutoAttachMirrorReflectionComponents()

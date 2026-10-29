@@ -16,6 +16,7 @@ public class LiveCharacterSelect : MonoBehaviour
         ui.CurrentSeletChara = this;
         if (!ui.SelectCharacterPannel.activeInHierarchy)
             ui.ToggleUIPanel(ui.SelectCharacterPannel);
+        ui.ApplyLiveCharacterFilter();
     }
 
     public void SetValue(CharaEntry charaentry, string costumeId, Sprite costumeSprite, string headCostumeId)

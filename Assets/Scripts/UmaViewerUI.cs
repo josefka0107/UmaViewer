@@ -184,6 +184,11 @@ public class UmaViewerUI : MonoBehaviour
 
     private void Update()
     {
+        if (liveCharacterFilterApplied && !LiveSelectPannel.activeInHierarchy)
+        {
+            ApplyLiveCharacterFilter();
+        }
+
         if (Builder.CurrentAudioSources.Count > 0 && Builder.CurrentAudioSources[0])
         {
             AudioSource MianSource = Builder.CurrentAudioSources[0];
@@ -860,9 +865,120 @@ public class UmaViewerUI : MonoBehaviour
         }
     }
 
+    /// <summary> True: while picking a live member, the character list only shows characters with vocals for the song. </summary>
+    public bool OnlyVoicedCharas = false;
+    private Toggle onlyVoicedToggle;
+    private bool liveCharacterFilterApplied;
+
+    /// <summary>
+    /// Adds the "Only Voiced" toggle and the "Recommended" button to the live select panel.
+    /// They are copies of the panel's own toggle and button, since the scene has no slot for them.
+    /// </summary>
+    void SetupLiveSelectExtras()
+    {
+        if (onlyVoicedToggle) return;
+
+        var stageToggle = LiveSelectPannel.transform.Find("StageToggle")?.GetComponent<Toggle>();
+        if (stageToggle)
+        {
+            onlyVoicedToggle = Instantiate(stageToggle, stageToggle.transform.parent);
+            onlyVoicedToggle.name = "OnlyVoicedToggle";
+            onlyVoicedToggle.onValueChanged = new Toggle.ToggleEvent();
+            onlyVoicedToggle.isOn = OnlyVoicedCharas;
+            var rect = (RectTransform)onlyVoicedToggle.transform;
+            rect.anchoredPosition = ((RectTransform)stageToggle.transform).anchoredPosition + new Vector2(0, 40);
+            onlyVoicedToggle.GetComponentInChildren<Text>().text = "Only Voiced";
+            onlyVoicedToggle.onValueChanged.AddListener(value =>
+            {
+                OnlyVoicedCharas = value;
+                ApplyLiveCharacterFilter();
+            });
+        }
+
+        var playButton = LiveSelectPannel.transform.Find("PlayButtton")?.GetComponent<Button>();
+        if (playButton)
+        {
+            var button = Instantiate(playButton, playButton.transform.parent);
+            button.name = "RecommendedButton";
+            button.onClick = new Button.ButtonClickedEvent();
+            var rect = (RectTransform)button.transform;
+            rect.sizeDelta = new Vector2(175, 40);
+            rect.anchoredPosition = new Vector2(-288, 40);
+            button.GetComponentInChildren<Text>().text = "Recommended";
+            button.onClick.AddListener(FillLiveRecommended);
+        }
+    }
+
+    /// <summary> Shows only characters with vocals for the current live while one of its members is being picked. </summary>
+    public void ApplyLiveCharacterFilter()
+    {
+        bool filter = OnlyVoicedCharas && LiveSelectPannel.activeInHierarchy && currentLive != null && currentLive.SongCharaType == 2 && currentLive.VoicedCharas.Count > 0;
+        foreach (Transform child in CharactersList.content)
+        {
+            bool show = true;
+            if (filter && int.TryParse(child.name.Split(' ')[0], out int id))
+            {
+                show = currentLive.VoicedCharas.Contains(id);
+            }
+            child.gameObject.SetActive(show);
+        }
+        liveCharacterFilterApplied = filter;
+    }
+
+    /// <summary>
+    /// Fills the live members with the game's recommended formation, or with characters that have vocals
+    /// for the song when it has none.
+    /// </summary>
+    public void FillLiveRecommended()
+    {
+        if (currentLive == null) return;
+
+        var picks = currentLive.RecommendedFormation.Count > 0
+            ? currentLive.RecommendedFormation
+            : currentLive.SongCharaType == 2
+                ? currentLive.VoicedCharas.OrderBy(id => id).Select(id => (CharaId: id, DressId: 0)).ToList()
+                : new List<(int CharaId, int DressId)>();
+        if (picks.Count == 0)
+        {
+            ShowMessage("Every character has vocals for this song", UIMessageType.Warning);
+            return;
+        }
+
+        var slots = LiveSelectList.content.GetComponentsInChildren<LiveCharacterSelect>();
+        int filled = 0;
+        for (int i = 0; i < slots.Length && i < picks.Count; i++)
+        {
+            var chara = Main.Characters.FirstOrDefault(c => c.Id == picks[i].CharaId);
+            var costumeId = chara == null ? null : FindLiveCostumeId(chara, picks[i].DressId);
+            if (costumeId == null) continue;
+
+            var dressdata = Main.Costumes.FirstOrDefault(a => a.CharaId == chara.Id && a.BodyTypeSub == int.Parse(costumeId));
+            slots[i].SetValue(chara, costumeId, dressdata == null ? CostumeIconDefault : dressdata.Icon, string.Empty);
+            filled++;
+        }
+        ShowMessage($"{filled} members set ({(currentLive.RecommendedFormation.Count > 0 ? "recommended formation" : "voiced characters")})", UIMessageType.Success);
+    }
+
+    /// <summary> Costume id (body file suffix) of <paramref name="dressId"/>, or the character's first own costume. </summary>
+    string FindLiveCostumeId(CharaEntry chara, int dressId)
+    {
+        var costumeIds = Main.AbChara
+            .Where(a => a.Name.StartsWith(UmaDatabaseController.BodyPath) && !a.Name.Contains("clothes") && a.Name.Contains($"pfb_bdy{chara.Id}"))
+            .Select(a => a.Name.Split('_').Last())
+            .Where(id => int.TryParse(id, out _))
+            .OrderBy(id => id)
+            .ToList();
+        if (costumeIds.Count == 0) return null;
+
+        var dress = Main.Costumes.FirstOrDefault(c => c.CharaId == chara.Id && c.Id.Split('_')[0] == dressId.ToString());
+        var dressCostumeId = dress?.BodyTypeSub.ToString("00");
+        return costumeIds.Contains(dressCostumeId) ? dressCostumeId : costumeIds[0];
+    }
+
     void ShowLiveSelectPanel(LiveEntry entry)
     {
         LiveSelectPannel.SetActive(true);
+        SetupLiveSelectExtras();
         Builder.loadLivePreviewSound(entry.MusicId);
         for (int i = LiveSelectList.content.childCount - 1; i >= 0; i--)
         {
@@ -914,7 +1030,8 @@ public class UmaViewerUI : MonoBehaviour
                 });
             }
         }
-        
+
+        ApplyLiveCharacterFilter();
     }
 
     void ListCostumes(CharaEntry chara, bool mini)
@@ -1301,6 +1418,10 @@ public class UmaViewerUI : MonoBehaviour
     /// <summary> Toggles one object ON and all others from UI.TogglablePanels list OFF </summary>
     public void ToggleUIPanel(GameObject go)
     {
+        if (go == SelectCharacterPannel)
+        {
+            ApplyLiveCharacterFilter();
+        }
 
         if (go.activeSelf || !TogglablePanels.Contains(go))
         {

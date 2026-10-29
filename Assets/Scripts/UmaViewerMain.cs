@@ -214,14 +214,24 @@ public class UmaViewerMain : MonoBehaviour
                         {
                             TextAsset liveData = bundle.LoadAsset<TextAsset>(musicId.ToString());
 
-                            Lives.Add(new LiveEntry(liveData.text)
+                            var live = new LiveEntry(liveData.text)
                             {
                                 MusicId = musicId,
                                 SongName = songName,
                                 MemberCount = membercount,
                                 DefaultDress = defaultdress,
+                                SongCharaType = Convert.ToInt32(item["song_chara_type"]),
                                 Icon = UmaViewerBuilder.Instance.LoadLiveIcon(musicId)
-                            }); 
+                            };
+                            foreach (var row in UmaDatabaseController.Instance.LivePermissionData.Where(r => Convert.ToInt32(r["music_id"]) == musicId))
+                            {
+                                live.VoicedCharas.Add(Convert.ToInt32(row["chara_id"]));
+                            }
+                            foreach (var row in UmaDatabaseController.Instance.LiveRecommendData.Where(r => Convert.ToInt32(r["music_id"]) == musicId))
+                            {
+                                live.RecommendedFormation.Add((Convert.ToInt32(row["chara_id"]), Convert.ToInt32(row["dress_id"])));
+                            }
+                            Lives.Add(live);
                         }
                     }
                 }

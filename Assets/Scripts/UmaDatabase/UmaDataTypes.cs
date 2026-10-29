@@ -93,6 +93,12 @@ public class LiveEntry
     public string BackGroundId;
     public Sprite Icon;
     public List<string[]> LiveSettings = new List<string[]>();
+    /// <summary> 1: everyone sings the song, 2: only <see cref="VoicedCharas"/> have vocals. </summary>
+    public int SongCharaType;
+    /// <summary> Characters with their own vocals for this song (live_permission_data). </summary>
+    public HashSet<int> VoicedCharas = new HashSet<int>();
+    /// <summary> The game's suggested members by position (live_recommend_formation), empty for most songs. </summary>
+    public List<(int CharaId, int DressId)> RecommendedFormation = new List<(int, int)>();
 
     public LiveEntry(string data)
     {

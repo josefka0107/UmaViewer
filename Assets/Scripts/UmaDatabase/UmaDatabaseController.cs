@@ -43,6 +43,8 @@ public class UmaDatabaseController
     public List<DataRow> MobCharaData;
     public List<FaceTypeData> FaceTypeData;
     public List<DataRow> LiveData;
+    public List<DataRow> LivePermissionData;
+    public List<DataRow> LiveRecommendData;
     public List<DataRow> DressData;
 
     //从master里面取点歌机歌曲目录
@@ -120,6 +122,8 @@ public class UmaDatabaseController
             MobCharaData = ReadMobCharaMaster(masterDb);
             FaceTypeData = ReadFaceTypeData(masterDb);
             LiveData = ReadAllLiveData(masterDb);
+            LivePermissionData = ReadMaster(masterDb, "SELECT music_id, chara_id FROM live_permission_data");
+            LiveRecommendData = ReadMaster(masterDb, "SELECT music_id, chara_id, dress_id FROM live_recommend_formation ORDER BY music_id, position_id");
             DressData = ReadAllDressData(masterDb);
             JukeboxMusicData = new Gallop.MasterJukeboxMusicData(masterDb);
 

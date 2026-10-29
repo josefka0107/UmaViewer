@@ -1325,14 +1325,27 @@ namespace Gallop.Live
                 if (gameObject.transform.parent != attach_transform)
                     gameObject.transform.SetParent(attach_transform);
 
+                // OffsetType.Add keys are relative to the object's own placement: 1054's platform sits at y=1.6 in
+                // its prefab and the timeline raises it from there; applied as absolute it sank under the stage.
+                var t = gameObject.transform;
+                if (!_originalLocalPoses.TryGetValue(gameObject, out var pose))
+                {
+                    pose = (t.localPosition, t.localRotation, t.localScale);
+                    _originalLocalPoses[gameObject] = pose;
+                }
+                bool add = updateInfo.OffsetType == OffsetType.Add && t.parent == originalParent;
+
                 if (updateInfo.data.enablePosition)
-                    gameObject.transform.localPosition = updateInfo.updateData.position;
+                    t.localPosition = add ? pose.position + updateInfo.updateData.position : updateInfo.updateData.position;
                 if (updateInfo.data.enableRotate)
-                    gameObject.transform.localRotation = updateInfo.updateData.rotation;
+                    t.localRotation = add ? pose.rotation * updateInfo.updateData.rotation : updateInfo.updateData.rotation;
                 if (updateInfo.data.enableScale)
-                    gameObject.transform.localScale = updateInfo.updateData.scale;
+                    t.localScale = add ? Vector3.Scale(pose.scale, updateInfo.updateData.scale) : updateInfo.updateData.scale;
             }
         }
+
+        private readonly Dictionary<GameObject, (Vector3 position, Quaternion rotation, Vector3 scale)> _originalLocalPoses =
+            new Dictionary<GameObject, (Vector3 position, Quaternion rotation, Vector3 scale)>();
 
         public void UpdateTransform(ref TransformUpdateInfo updateInfo)
         {

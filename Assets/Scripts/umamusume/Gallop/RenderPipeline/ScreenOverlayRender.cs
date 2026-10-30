@@ -574,6 +574,12 @@ namespace Gallop.RenderPipeline
             return left;
         }
 
+        /// <summary>
+        /// Viewer hook: draws a material pass in place of cmd.Blit, which flips each material pass vertically when
+        /// called from a URP render pass (see LivePostEffectController.DrawFullscreen). Copies still use cmd.Blit.
+        /// </summary>
+        public static Action<CommandBuffer, RenderTargetIdentifier, RenderTargetIdentifier, Material, int> MaterialBlitOverride;
+
         private static void Blit(
             CommandBuffer cmd,
             RenderTextureHandle source,
@@ -581,6 +587,12 @@ namespace Gallop.RenderPipeline
             Material material,
             int pass)
         {
+            if (material != null && pass >= 0 && MaterialBlitOverride != null)
+            {
+                MaterialBlitOverride(cmd, source.RtId, destination.RtId, material, pass);
+                return;
+            }
+
             if (material == null || pass < 0)
             {
                 cmd.Blit(source.RtId, destination.RtId);

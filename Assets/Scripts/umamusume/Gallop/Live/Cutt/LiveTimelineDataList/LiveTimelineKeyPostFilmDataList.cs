@@ -23,6 +23,16 @@ namespace Gallop.Live.Cutt
     }
 
 
+    /// <summary>
+    /// One screen overlay layer of the worksheet (postFilmKeys, postFilm2Keys, postFilm3Keys). 1054 tints the
+    /// screen with them: mostly mode 5 (VignetteAdd) in orange around 2286-2498, with colorType 0 and layerMode 0.
+    /// </summary>
+    [System.Serializable]
+    public class LiveTimelineKeyPostFilmDataList : LiveTimelineKeyDataListTemplate<LiveTimelineKeyPostFilmData>
+    {
+
+    }
+
     [System.Serializable]
     public class LiveTimelineKeyPostFilmData : LiveTimelineKeyWithInterpolate
     {

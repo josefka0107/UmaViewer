@@ -32,6 +32,9 @@ Shader "Hidden/UmaViewer/LiveSunShafts"
     {
         v2f o;
         o.pos = UnityObjectToClipPos(v.vertex);
+        // Drawn by LivePostEffectController.DrawFullscreen, where each draw of this shader flipped the image while
+        // the game's own post shaders did not (1054 recordings 009 and 010): match them
+        o.pos.y = -o.pos.y;
         o.uv = v.texcoord.xy;
         return o;
     }
@@ -41,7 +44,8 @@ Shader "Hidden/UmaViewer/LiveSunShafts"
     half4 fragMask(v2f i) : SV_Target
     {
         half3 col = tex2D(_MainTex, i.uv).rgb;
-        float depth = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, i.uv));
+        // The camera depth stays in its flipped storage while the color reaches here through upright copies
+        float depth = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, float2(i.uv.x, 1 - i.uv.y)));
         half behind = depth >= _SunPosition.w ? _CenterBrightness : 0;
         half3 bright = max(col - _Threshold, 0);
         float2 d = (_SunPosition.xy - i.uv) * float2(_ScreenParams.x / _ScreenParams.y, 1);

@@ -21,6 +21,8 @@ namespace Gallop.Live
         readonly ColorCurves _curves;
         readonly ColorAdjustments _adjustments;
         readonly SunShaftsPass _sunPass;
+        readonly FilmPass _filmPass;
+        readonly List<LiveTimelineKeyPostFilmData>[] _filmKeys;
         readonly HashSet<Camera> _cameras = new HashSet<Camera>();
         int _colorKeyIndex = -2;
         bool _sunLogged;
@@ -56,14 +58,32 @@ namespace Gallop.Live
 
             var shader = Shader.Find("Hidden/UmaViewer/LiveSunShafts");
             if (_sunKeys.Count > 0 && shader != null)
-            {
                 _sunPass = new SunShaftsPass(new Material(shader) { hideFlags = HideFlags.HideAndDontSave }, data.sunShaftsSettings);
-                RenderPipelineManager.beginCameraRendering += OnBeginCameraRendering;
-            }
             else if (_sunKeys.Count > 0)
                 Debug.LogWarning("[LivePostEffect] shader Hidden/UmaViewer/LiveSunShafts not found: no sun shafts");
 
-            Debug.Log($"[LivePostEffect] {_colorKeys.Count} color correction keys, {_sunKeys.Count} sun shaft keys");
+            // The three screen overlay layers, drawn with the game's own film shader
+            var sheets = data.worksheetList.Where(s => s != null).ToList();
+            _filmKeys = new[]
+            {
+                FilmKeys(sheets.Select(s => s.postFilmKeys)),
+                FilmKeys(sheets.Select(s => s.postFilm2Keys)),
+                FilmKeys(sheets.Select(s => s.postFilm3Keys)),
+            };
+            if (_filmKeys.Any(k => k.Count > 0))
+            {
+                var filmShader = Gallop.ShaderManager.GetShader(Gallop.ShaderManager.ShaderKinds.PostBlit_Rich);
+                if (filmShader != null)
+                    _filmPass = new FilmPass(new Material(filmShader) { hideFlags = HideFlags.HideAndDontSave });
+                else
+                    Debug.LogWarning("[LivePostEffect] game shader PostBlit_Rich not found: no post film");
+            }
+
+            if (_sunPass != null || _filmPass != null)
+                RenderPipelineManager.beginCameraRendering += OnBeginCameraRendering;
+
+            Debug.Log($"[LivePostEffect] {_colorKeys.Count} color correction keys, {_sunKeys.Count} sun shaft keys, " +
+                      $"post film keys {string.Join("/", _filmKeys.Select(k => k.Count))}");
         }
 
         public void AlterUpdate(float frame, IEnumerable<Camera> cameras)
@@ -84,7 +104,75 @@ namespace Gallop.Live
 
             UpdateColorCorrection(frame);
             UpdateSunShafts(frame);
+            UpdateFilm(frame);
         }
+
+        static List<LiveTimelineKeyPostFilmData> FilmKeys(IEnumerable<LiveTimelineKeyPostFilmDataList> lists)
+        {
+            return lists
+                .Where(l => l != null && !l.HasAttribute(LiveTimelineKeyDataListAttr.Disable))
+                .SelectMany(l => l.thisList)
+                .OrderBy(k => k.frame)
+                .ToList();
+        }
+
+        // Attribute bit the 1054 film keys carry on all but a few; read as "use depth" (unconfirmed)
+        const int FilmAttrEnableDepth = 0x100000;
+
+        void UpdateFilm(float frame)
+        {
+            if (_filmPass == null) return;
+            for (int layer = 0; layer < 3; layer++)
+            {
+                var keys = _filmKeys[layer];
+                int index = -1;
+                for (int i = 0; i < keys.Count && keys[i].frame <= frame; i++) index = i;
+                var param = Gallop.RenderPipeline.ScreenOverlayRender.Parameter.Default();
+                if (index >= 0)
+                {
+                    var key = keys[index];
+                    var next = index + 1 < keys.Count ? keys[index + 1] : null;
+                    float t = 0;
+                    if (next != null && next.interpolateType != LiveCameraInterpolateType.None && next.frame > key.frame)
+                        t = Mathf.Clamp01(LiveTimelineControl.CalculateInterpolationValue(key, next, frame));
+                    else
+                        next = key;
+
+                    param.PostFilmMode = (Gallop.ImageEffect.ScreenOverlay.Overlay.PostFilmMode)(int)key.filmMode;
+                    param.PostFilmPower = Mathf.Lerp(key.filmPower, next.filmPower, t);
+                    param.DepthPower = Mathf.Lerp(key.depthPower, next.depthPower, t);
+                    param.DepthClip = Mathf.Lerp(key.DepthClip, next.DepthClip, t);
+                    param.PostFilmOffsetParam = Vector2.Lerp(key.filmOffsetParam, next.filmOffsetParam, t);
+                    param.PostFilmOptionParam = Vector4.Lerp(key.filmOptionParam, next.filmOptionParam, t);
+                    var c0 = Color.Lerp(key.color0, next.color0, t);
+                    if (key.colorType == PostColorType.ColorAll)
+                    {
+                        param.PostFilmColor0 = param.PostFilmColor1 = param.PostFilmColor2 = param.PostFilmColor3 = c0;
+                    }
+                    else
+                    {
+                        param.PostFilmColor0 = c0;
+                        param.PostFilmColor1 = Color.Lerp(key.color1, next.color1, t);
+                        param.PostFilmColor2 = Color.Lerp(key.color2, next.color2, t);
+                        param.PostFilmColor3 = Color.Lerp(key.color3, next.color3, t);
+                    }
+                    param.IsEnableDepth = ((int)key.attribute & FilmAttrEnableDepth) != 0;
+                    param.SetRollAngle(Mathf.Lerp(key.RollAngle, next.RollAngle, t) * Mathf.Deg2Rad);
+                    var scale = Vector2.Lerp(key.FilmScale, next.FilmScale, t);
+                    param.SetScale(new Vector2(scale.x == 0 ? 1 : scale.x, scale.y == 0 ? 1 : scale.y));
+                }
+                _filmPass.Layers[layer] = param;
+            }
+
+            if (!_filmLogged && _filmPass.Layers.Any(p => p.IsValidity))
+            {
+                _filmLogged = true;
+                var p = _filmPass.Layers.First(l => l.IsValidity);
+                Debug.Log($"[LivePostEffect] post film on at frame {(int)frame}: mode={p.PostFilmMode} power={p.PostFilmPower:0.00} color={p.PostFilmColor0} offset={p.PostFilmOffsetParam} option={p.PostFilmOptionParam}");
+            }
+        }
+
+        bool _filmLogged;
 
         void UpdateColorCorrection(float frame)
         {
@@ -155,14 +243,124 @@ namespace Gallop.Live
                 Release();
                 return;
             }
-            if (!_sunPass.Enabled || !_cameras.Contains(camera)) return;
-            var cameraData = camera.GetUniversalAdditionalCameraData();
-            cameraData?.scriptableRenderer?.EnqueuePass(_sunPass);
+            if (!_cameras.Contains(camera)) return;
+            var renderer = camera.GetUniversalAdditionalCameraData()?.scriptableRenderer;
+            if (renderer == null) return;
+            if (_sunPass != null && _sunPass.Enabled) renderer.EnqueuePass(_sunPass);
+            if (_filmPass != null && _filmPass.Layers.Any(p => p.IsValidity)) renderer.EnqueuePass(_filmPass);
+        }
+
+        /// <summary>
+        /// The worksheet's three post film layers through the reconstructed ScreenOverlayRender.PostFilmBlit and
+        /// the game's PostBlit_Rich (pass 1 = first layer, 3 = second and third; +1 is the inverse vignette).
+        /// </summary>
+        class FilmPass : ScriptableRenderPass
+        {
+            const int FilmPass1st = 1;
+            const int FilmPass2nd = 3;
+            static readonly int SourceId = Shader.PropertyToID("_LivePostFilmSource");
+            static readonly int ResultId = Shader.PropertyToID("_LivePostFilmResult");
+
+            readonly Material _material;
+            readonly Gallop.RenderPipeline.ScreenOverlayRender _render = new Gallop.RenderPipeline.ScreenOverlayRender();
+            public readonly Gallop.RenderPipeline.ScreenOverlayRender.Parameter[] Layers =
+            {
+                Gallop.RenderPipeline.ScreenOverlayRender.Parameter.Default(),
+                Gallop.RenderPipeline.ScreenOverlayRender.Parameter.Default(),
+                Gallop.RenderPipeline.ScreenOverlayRender.Parameter.Default(),
+            };
+
+            public FilmPass(Material material)
+            {
+                _material = material;
+                // After the sun shafts, which are enqueued at BeforeRenderingPostProcessing
+                renderPassEvent = RenderPassEvent.BeforeRenderingPostProcessing + 1;
+                ConfigureInput(ScriptableRenderPassInput.Depth);
+            }
+
+            public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
+            {
+                var desc = renderingData.cameraData.cameraTargetDescriptor;
+                desc.depthBufferBits = 0;
+                desc.msaaSamples = 1;
+                RenderTargetIdentifier target = renderingData.cameraData.renderer.cameraColorTargetHandle;
+                var source = Gallop.RenderPipeline.RenderTextureHandle.Make(SourceId, desc.width, desc.height);
+                var result = Gallop.RenderPipeline.RenderTextureHandle.Make(ResultId, desc.width, desc.height);
+
+                var cmd = CommandBufferPool.Get("LivePostFilm");
+                cmd.GetTemporaryRT(SourceId, desc, FilterMode.Bilinear);
+                cmd.GetTemporaryRT(ResultId, desc, FilterMode.Bilinear);
+                cmd.Blit(target, SourceId);
+                DrawSize = desc;
+                Gallop.RenderPipeline.ScreenOverlayRender.MaterialBlitOverride = DrawFullscreen;
+                _render.PostFilmBlit(context, cmd, source, result, _material,
+                    ref Layers[0], ref Layers[1], ref Layers[2], -1, FilmPass1st, FilmPass2nd);
+                RestoreCameraMatrices(cmd, ref renderingData);
+                cmd.Blit(ResultId, target);
+                cmd.ReleaseTemporaryRT(SourceId);
+                cmd.ReleaseTemporaryRT(ResultId);
+                context.ExecuteCommandBuffer(cmd);
+                CommandBufferPool.Release(cmd);
+            }
         }
 
         public void Release()
         {
             RenderPipelineManager.beginCameraRendering -= OnBeginCameraRendering;
+        }
+
+        static Mesh _fullscreenQuad;
+
+        /// <summary>
+        /// A material pass drawn as a clip-space quad with the GPU projection for render textures, which keeps
+        /// texture-to-texture draws upright on D3D (1054 recordings: with an identity projection every film layer
+        /// flipped the image; cmd.Blit with a material flipped too). Callers restore the camera matrices afterwards.
+        /// </summary>
+        static void DrawFullscreen(CommandBuffer cmd, RenderTargetIdentifier source, RenderTargetIdentifier destination, Material material, int pass)
+        {
+            if (_fullscreenQuad == null)
+            {
+                _fullscreenQuad = new Mesh { name = "LivePostEffectQuad", hideFlags = HideFlags.HideAndDontSave };
+                _fullscreenQuad.SetVertices(new List<Vector3> { new Vector3(-1, -1, 0), new Vector3(-1, 1, 0), new Vector3(1, 1, 0), new Vector3(1, -1, 0) });
+                _fullscreenQuad.SetUVs(0, new List<Vector2> { new Vector2(0, 0), new Vector2(0, 1), new Vector2(1, 1), new Vector2(1, 0) });
+                _fullscreenQuad.SetTriangles(new[] { 0, 1, 2, 0, 2, 3 }, 0);
+            }
+            // The shaders declare _MainTex, so the material's own value beats a global one: bind the source through
+            // a property block, which needs a real texture, hence the plain (non-flipping) copy into a scratch one
+            var scratch = Scratch(DrawSize);
+            cmd.Blit(source, scratch);
+            var block = new MaterialPropertyBlock();
+            block.SetTexture(MainTexId, scratch);
+            // The game's film shader flips its depth uv when _MainTex_TexelSize.y < 0 (its vertex program, seen with
+            // D3DDisassemble). The camera depth stays in flipped storage while this copy is upright: without it the
+            // depth-weighted layers drew mirrored silhouettes (1054, frames 1200 and 1680)
+            block.SetVector(MainTexTexelSizeId, new Vector4(1f / scratch.width, -1f / scratch.height, scratch.width, -scratch.height));
+            cmd.SetRenderTarget(destination, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
+            cmd.SetViewProjectionMatrices(Matrix4x4.identity, GL.GetGPUProjectionMatrix(Matrix4x4.identity, true));
+            cmd.DrawMesh(_fullscreenQuad, Matrix4x4.identity, material, 0, pass, block);
+        }
+
+        static readonly int MainTexId = Shader.PropertyToID("_MainTex");
+        static readonly int MainTexTexelSizeId = Shader.PropertyToID("_MainTex_TexelSize");
+
+        // Size of the scratch copy for the next DrawFullscreen calls; commands run in order, so one per size is enough
+        static RenderTextureDescriptor DrawSize;
+        static readonly Dictionary<(int, int), RenderTexture> _scratch = new Dictionary<(int, int), RenderTexture>();
+
+        static RenderTexture Scratch(RenderTextureDescriptor desc)
+        {
+            if (_scratch.TryGetValue((desc.width, desc.height), out var rt) && rt != null && rt.IsCreated()) return rt;
+            desc.depthBufferBits = 0;
+            desc.msaaSamples = 1;
+            rt = new RenderTexture(desc) { name = $"LivePostEffectScratch{desc.width}x{desc.height}", hideFlags = HideFlags.HideAndDontSave };
+            rt.Create();
+            _scratch[(desc.width, desc.height)] = rt;
+            return rt;
+        }
+
+        static void RestoreCameraMatrices(CommandBuffer cmd, ref RenderingData renderingData)
+        {
+            cmd.SetViewProjectionMatrices(renderingData.cameraData.GetViewMatrix(), renderingData.cameraData.GetProjectionMatrix());
         }
 
         /// <summary>
@@ -174,9 +372,11 @@ namespace Gallop.Live
         {
             // Legacy SunShafts radius; PowerScale brings power x intensity near the legacy default (1.15)
             const float MaxRadius = 0.75f;
-            const float PowerScale = 1f / 10f;
+            // 1/10 washed 1054's frame 9000 (power 30, blurRadius 10) out to white; the game's is bright yellow
+            const float PowerScale = 1f / 20f;
             const int Downsample = 4;
 
+            static readonly int SourceId = Shader.PropertyToID("_LiveSunShaftsSource");
             static readonly int MaskId = Shader.PropertyToID("_LiveSunShaftsMask");
             static readonly int BlurId = Shader.PropertyToID("_LiveSunShaftsBlur");
             static readonly int CompositeId = Shader.PropertyToID("_LiveSunShaftsComposite");
@@ -233,9 +433,13 @@ namespace Gallop.Live
                 small.height = Mathf.Max(1, desc.height / Downsample);
 
                 var cmd = CommandBufferPool.Get("LiveSunShafts");
+                cmd.GetTemporaryRT(SourceId, desc, FilterMode.Bilinear);
                 cmd.GetTemporaryRT(MaskId, small, FilterMode.Bilinear);
                 cmd.GetTemporaryRT(BlurId, small, FilterMode.Bilinear);
                 cmd.GetTemporaryRT(CompositeId, desc, FilterMode.Bilinear);
+                // Read a temporary copy of the camera target, as the film pass does: reading the target directly into
+                // the draw's scratch texture left this pass flipped (1054 recordings 007 and 008)
+                cmd.Blit(source, SourceId);
 
                 _material.SetVector(SunPositionId, new Vector4(sun.x, sun.y, MaxRadius, sun.z));
                 _material.SetFloat(ThresholdId, _blackLevel);
@@ -245,21 +449,26 @@ namespace Gallop.Live
                 _material.SetFloat(ScreenColorPowerId, ScreenColorPower);
                 _material.SetFloat(EffectColorPowerId, EffectColorPower);
 
-                cmd.Blit(source, MaskId, _material, 0);
+                DrawSize = desc;
+                DrawFullscreen(cmd, SourceId, MaskId, _material, 0);
                 // Legacy blur schedule: each pass reaches further towards the sun
+                DrawSize = small;
                 int from = MaskId, to = BlurId;
                 for (int i = 0; i < _iterations; i++)
                 {
                     float ofs = BlurRadius * ((i * 2f + 1f) * 6f) / 768f;
                     cmd.SetGlobalVector(BlurRadiusId, new Vector4(ofs, ofs, 0, 0));
-                    cmd.Blit(from, to, _material, 1);
+                    DrawFullscreen(cmd, from, to, _material, 1);
                     (from, to) = (to, from);
                 }
 
                 cmd.SetGlobalTexture(ShaftsTexId, from);
-                cmd.Blit(source, CompositeId, _material, 2);
+                DrawSize = desc;
+                DrawFullscreen(cmd, SourceId, CompositeId, _material, 2);
+                RestoreCameraMatrices(cmd, ref renderingData);
                 cmd.Blit(CompositeId, source);
 
+                cmd.ReleaseTemporaryRT(SourceId);
                 cmd.ReleaseTemporaryRT(MaskId);
                 cmd.ReleaseTemporaryRT(BlurId);
                 cmd.ReleaseTemporaryRT(CompositeId);

@@ -76,6 +76,7 @@ namespace Gallop.Live
         private LivePropsController _propsController;
         private LiveEffectsController _effectsController;
         private LiveAdditionalLightController _additionalLightController;
+        private LivePostEffectController _postEffectController;
 
         public Transform MainCameraTransform => _mainCameraTransform;
 
@@ -233,6 +234,16 @@ namespace Gallop.Live
             {
                 Debug.LogException(e);
                 _additionalLightController = null;
+            }
+
+            try
+            {
+                _postEffectController = new LivePostEffectController(_liveTimelineControl.data, transform);
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+                _postEffectController = null;
             }
 
             _liveTimelineControl.OnUpdateLipSync += delegate (LiveTimelineKeyIndex keyData_, float liveTime_)
@@ -540,6 +551,20 @@ namespace Gallop.Live
                 {
                     Debug.LogException(e);
                     _additionalLightController = null;
+                }
+            }
+
+            if (_postEffectController != null && _cameraObjects != null)
+            {
+                try
+                {
+                    _postEffectController.AlterUpdate(_liveCurrentTime * 60f, _cameraObjects);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogException(e);
+                    _postEffectController.Release();
+                    _postEffectController = null;
                 }
             }
         }
@@ -1155,6 +1180,7 @@ namespace Gallop.Live
         private void OnDestroy()
         {
             UnbindTimelineEvents();
+            _postEffectController?.Release();
 
             if (_instance == this)
                 _instance = null;

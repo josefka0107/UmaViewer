@@ -10,6 +10,8 @@ Setup (once): `python -m venv venv && venv/Scripts/python -m pip install UnityPy
 - `bundleinfo.py <bundle>`: objects, MonoBehaviour classes and whether the type tree is present.
 - `cuttdetail.py <cutt data bundle>`: `LiveTimelineData` top-level fields and `propsSettings`.
 - `worksheet.py <cutt camera bundle> [list] [n]`: `LiveTimelineWorkSheet` lists with key counts, or the keys of one list.
+- `shaderdisasm.py <shader name> [max]`: DX11 disassembly of a game shader's programs (Windows `d3dcompiler_47.dll`), to see what it really does with its uniforms.
+- `vidcompare.py <out prefix> <frames> <label=video@offset>...`: side-by-side sheets of the same timeline frames from several videos (offsets from `vidalign.py`). Needs `opencv-python` in the venv.
 
 A live's timeline is split in `cutt/cutt_son<id>/data` (`LiveTimelineData`) and
 `cutt/cutt_son<id>/son<id>_camera` (`LiveTimelineWorkSheet`).

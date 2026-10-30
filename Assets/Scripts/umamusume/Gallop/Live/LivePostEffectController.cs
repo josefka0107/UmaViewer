@@ -22,6 +22,9 @@ namespace Gallop.Live
         readonly ColorAdjustments _adjustments;
         readonly SunShaftsPass _sunPass;
         readonly FilmPass _filmPass;
+        readonly BloomPass _bloomPass;
+        readonly List<LiveTimelineKeyPostEffectBloomDiffusionData> _bloomKeys;
+        bool _bloomLogged;
         readonly List<LiveTimelineKeyPostFilmData>[] _filmKeys;
         readonly HashSet<Camera> _cameras = new HashSet<Camera>();
         int _colorKeyIndex = -2;
@@ -79,11 +82,28 @@ namespace Gallop.Live
                     Debug.LogWarning("[LivePostEffect] game shader PostBlit_Rich not found: no post film");
             }
 
-            if (_sunPass != null || _filmPass != null)
+            // Bloom from the worksheet's postEffectBloomDiffusionKeys, drawn with the game's FastBloom
+            _bloomKeys = sheets
+                .Select(s => s.postEffectBloomDiffusionKeys)
+                .Where(l => l != null && !l.HasAttribute(LiveTimelineKeyDataListAttr.Disable))
+                .SelectMany(l => l.thisList)
+                .OrderBy(k => k.frame)
+                .ToList();
+            if (_bloomKeys.Count > 0)
+            {
+                var bloomShader = Gallop.ShaderManager.GetShader(Gallop.ShaderManager.ShaderKinds.FastBloom);
+                if (bloomShader != null)
+                    _bloomPass = new BloomPass(new Material(bloomShader) { hideFlags = HideFlags.HideAndDontSave },
+                        data.hdrBloomSettings != null ? data.hdrBloomSettings.bloomBlurIterations : 1);
+                else
+                    Debug.LogWarning("[LivePostEffect] game shader FastBloom not found: no bloom");
+            }
+
+            if (_sunPass != null || _filmPass != null || _bloomPass != null)
                 RenderPipelineManager.beginCameraRendering += OnBeginCameraRendering;
 
             Debug.Log($"[LivePostEffect] {_colorKeys.Count} color correction keys, {_sunKeys.Count} sun shaft keys, " +
-                      $"post film keys {string.Join("/", _filmKeys.Select(k => k.Count))}");
+                      $"post film keys {string.Join("/", _filmKeys.Select(k => k.Count))}, {_bloomKeys.Count} bloom keys");
         }
 
         public void AlterUpdate(float frame, IEnumerable<Camera> cameras)
@@ -105,6 +125,39 @@ namespace Gallop.Live
             UpdateColorCorrection(frame);
             UpdateSunShafts(frame);
             UpdateFilm(frame);
+            UpdateBloom(frame);
+        }
+
+        void UpdateBloom(float frame)
+        {
+            if (_bloomPass == null) return;
+            int index = -1;
+            for (int i = 0; i < _bloomKeys.Count && _bloomKeys[i].frame <= frame; i++) index = i;
+            var key = index >= 0 ? _bloomKeys[index] : null;
+            if (key == null || !key.IsEnabledBloom || key.intensity <= 0)
+            {
+                _bloomPass.Enabled = false;
+                return;
+            }
+
+            var next = index + 1 < _bloomKeys.Count ? _bloomKeys[index + 1] : null;
+            float t = 0;
+            if (next != null && next.interpolateType != LiveCameraInterpolateType.None && next.frame > key.frame && next.IsEnabledBloom)
+                t = Mathf.Clamp01(LiveTimelineControl.CalculateInterpolationValue(key, next, frame));
+            else
+                next = key;
+
+            _bloomPass.Enabled = true;
+            _bloomPass.Threshold = Mathf.Lerp(key.threshold, next.threshold, t);
+            _bloomPass.Intensity = Mathf.Lerp(key.intensity, next.intensity, t);
+            _bloomPass.BlurSize = Mathf.Lerp(key.BloomBlurSize, next.BloomBlurSize, t);
+            _bloomPass.BlendMode = (int)key.BloomBlendMode;
+
+            if (!_bloomLogged)
+            {
+                _bloomLogged = true;
+                Debug.Log($"[LivePostEffect] bloom on at frame {(int)frame}: threshold={_bloomPass.Threshold:0.00} intensity={_bloomPass.Intensity:0.00} blur={_bloomPass.BlurSize:0.00} blend={key.BloomBlendMode}");
+            }
         }
 
         static List<LiveTimelineKeyPostFilmData> FilmKeys(IEnumerable<LiveTimelineKeyPostFilmDataList> lists)
@@ -247,7 +300,96 @@ namespace Gallop.Live
             var renderer = camera.GetUniversalAdditionalCameraData()?.scriptableRenderer;
             if (renderer == null) return;
             if (_sunPass != null && _sunPass.Enabled) renderer.EnqueuePass(_sunPass);
+            if (_bloomPass != null && _bloomPass.Enabled) renderer.EnqueuePass(_bloomPass);
             if (_filmPass != null && _filmPass.Layers.Any(p => p.IsValidity)) renderer.EnqueuePass(_filmPass);
+        }
+
+        /// <summary>
+        /// The worksheet's bloom through the game's FastBloom, in the order of Unity's legacy FastBloom whose passes it
+        /// keeps (0 Bloom, 1 DownSample, 2 BlurVertical, 3 BlurHorizontal); the blur size is taken as quarter
+        /// resolution texels (x0.5, +1 per iteration, as the legacy one); _BloomIsScreenBlend 0 screen / 1 add.
+        /// 1054: threshold 0.85, intensity 8, blur 3.7, hdrBloomSettings.bloomBlurIterations 1.
+        /// </summary>
+        class BloomPass : ScriptableRenderPass
+        {
+            const int Downsample = 4;
+            const float WidthMod = 0.5f;
+            static readonly int SourceId = Shader.PropertyToID("_LiveBloomSource");
+            static readonly int ResultId = Shader.PropertyToID("_LiveBloomResult");
+            static readonly int ParameterId = Shader.PropertyToID("_Parameter");
+            static readonly int BloomId = Shader.PropertyToID("_Bloom");
+            static readonly int BloomIsScreenBlendId = Shader.PropertyToID("_BloomIsScreenBlend");
+
+            readonly Material _material;
+            readonly int _iterations;
+            RenderTexture _bloomA, _bloomB;
+            public bool Enabled;
+            public float Threshold, Intensity, BlurSize;
+            public int BlendMode;
+
+            public BloomPass(Material material, int iterations)
+            {
+                _material = material;
+                _iterations = Mathf.Clamp(iterations, 1, 4);
+                // Between the sun shafts and the film layers, which the game composites after its bloom
+                renderPassEvent = RenderPassEvent.BeforeRenderingPostProcessing + 1;
+            }
+
+            RenderTexture Ensure(RenderTexture rt, RenderTextureDescriptor desc, string name)
+            {
+                if (rt != null && rt.IsCreated() && rt.width == desc.width && rt.height == desc.height) return rt;
+                if (rt != null) rt.Release();
+                rt = new RenderTexture(desc) { name = name, hideFlags = HideFlags.HideAndDontSave, filterMode = FilterMode.Bilinear };
+                rt.Create();
+                return rt;
+            }
+
+            public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
+            {
+                var desc = renderingData.cameraData.cameraTargetDescriptor;
+                desc.depthBufferBits = 0;
+                desc.msaaSamples = 1;
+                var small = desc;
+                small.width = Mathf.Max(1, desc.width / Downsample);
+                small.height = Mathf.Max(1, desc.height / Downsample);
+                // The composite binds _Bloom through a property block, which needs real textures
+                _bloomA = Ensure(_bloomA, small, "LiveBloomA");
+                _bloomB = Ensure(_bloomB, small, "LiveBloomB");
+
+                RenderTargetIdentifier target = renderingData.cameraData.renderer.cameraColorTargetHandle;
+                var cmd = CommandBufferPool.Get("LiveBloom");
+                cmd.GetTemporaryRT(SourceId, desc, FilterMode.Bilinear);
+                cmd.GetTemporaryRT(ResultId, desc, FilterMode.Bilinear);
+                cmd.Blit(target, SourceId);
+
+                // FastBloom declares only _MainTex, so these reach it as command buffer globals, in draw order.
+                // Its programs (disassembled): DownSample = (average of 4 taps - _Parameter.z) * .w; BlurVertical
+                // steps .y and also subtracts .z; BlurHorizontal steps .x and multiplies by .w; the steps are uv
+                // offsets, not texels (passing texels drew screen-wide streaks). So threshold and intensity go in the
+                // downsample and the blurs only spread it.
+                cmd.SetGlobalFloat(BloomIsScreenBlendId, BlendMode);
+                cmd.SetGlobalVector(ParameterId, new Vector4(0, 0, Threshold, Intensity));
+                DrawSize = desc;
+                DrawFullscreen(cmd, SourceId, _bloomA, _material, 1, false, -1, null);
+                DrawSize = small;
+                for (int i = 0; i < _iterations; i++)
+                {
+                    float texels = BlurSize * WidthMod + i;
+                    cmd.SetGlobalVector(ParameterId, new Vector4(0, texels / small.height, 0, 1));
+                    DrawFullscreen(cmd, _bloomA, _bloomB, _material, 2, false, -1, null);
+                    cmd.SetGlobalVector(ParameterId, new Vector4(texels / small.width, 0, 0, 1));
+                    DrawFullscreen(cmd, _bloomB, _bloomA, _material, 3, false, -1, null);
+                }
+                DrawSize = desc;
+                DrawFullscreen(cmd, SourceId, ResultId, _material, 0, false, BloomId, _bloomA);
+                RestoreCameraMatrices(cmd, ref renderingData);
+                cmd.Blit(ResultId, target);
+
+                cmd.ReleaseTemporaryRT(SourceId);
+                cmd.ReleaseTemporaryRT(ResultId);
+                context.ExecuteCommandBuffer(cmd);
+                CommandBufferPool.Release(cmd);
+            }
         }
 
         /// <summary>
@@ -273,8 +415,8 @@ namespace Gallop.Live
             public FilmPass(Material material)
             {
                 _material = material;
-                // After the sun shafts, which are enqueued at BeforeRenderingPostProcessing
-                renderPassEvent = RenderPassEvent.BeforeRenderingPostProcessing + 1;
+                // After the sun shafts (BeforeRenderingPostProcessing) and the bloom (+1)
+                renderPassEvent = RenderPassEvent.BeforeRenderingPostProcessing + 2;
                 ConfigureInput(ScriptableRenderPassInput.Depth);
             }
 
@@ -318,6 +460,17 @@ namespace Gallop.Live
         /// </summary>
         static void DrawFullscreen(CommandBuffer cmd, RenderTargetIdentifier source, RenderTargetIdentifier destination, Material material, int pass)
         {
+            // Film layers: negative texel y (the shader flips its depth uv). Upright in 1054 recording 013; with a
+            // positive one (recording 014) the image came out upside down again, unexplained
+            DrawFullscreen(cmd, source, destination, material, pass, true, -1, null);
+        }
+
+        /// <param name="negativeTexelY">Pass _MainTex_TexelSize with a negative y: the film shader then flips its depth
+        /// uv (needed for film), but FastBloom's composite flips its _Bloom uv on it (not wanted); both disassembled</param>
+        /// <param name="extraTextureId">An extra texture the pass samples (FastBloom's _Bloom), or -1</param>
+        static void DrawFullscreen(CommandBuffer cmd, RenderTargetIdentifier source, RenderTargetIdentifier destination, Material material, int pass,
+            bool negativeTexelY, int extraTextureId, Texture extraTexture)
+        {
             if (_fullscreenQuad == null)
             {
                 _fullscreenQuad = new Mesh { name = "LivePostEffectQuad", hideFlags = HideFlags.HideAndDontSave };
@@ -334,7 +487,9 @@ namespace Gallop.Live
             // The game's film shader flips its depth uv when _MainTex_TexelSize.y < 0 (its vertex program, seen with
             // D3DDisassemble). The camera depth stays in flipped storage while this copy is upright: without it the
             // depth-weighted layers drew mirrored silhouettes (1054, frames 1200 and 1680)
-            block.SetVector(MainTexTexelSizeId, new Vector4(1f / scratch.width, -1f / scratch.height, scratch.width, -scratch.height));
+            float sign = negativeTexelY ? -1f : 1f;
+            block.SetVector(MainTexTexelSizeId, new Vector4(1f / scratch.width, sign / scratch.height, scratch.width, sign * scratch.height));
+            if (extraTexture != null) block.SetTexture(extraTextureId, extraTexture);
             cmd.SetRenderTarget(destination, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
             cmd.SetViewProjectionMatrices(Matrix4x4.identity, GL.GetGPUProjectionMatrix(Matrix4x4.identity, true));
             cmd.DrawMesh(_fullscreenQuad, Matrix4x4.identity, material, 0, pass, block);

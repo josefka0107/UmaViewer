@@ -129,16 +129,70 @@ namespace Gallop.Live
             if (_ctl == null || _stage == null || _provider == null)
                 BindIfPossible();
 
-            if (_ctl == null || _stage == null || _provider == null || !_hasMonitorTimelineData)
+            if (_ctl == null || _stage == null || _provider == null)
                 return;
 
-            if (!EnsureProviderReady())
+            if (!_hasMonitorTimelineData)
+            {
+                LogDiagOnce("no-data", "[Monitor] the timeline has no monitorControlList keys");
                 return;
+            }
+
+            if (!EnsureProviderReady())
+            {
+                LogDiagOnce("not-ready",
+                    $"[Monitor] provider not ready: musicId={Director.instance?.live?.MusicId}, " +
+                    $"loaded={_provider.LastLoadSucceeded}, clips={_provider.clips?.Count ?? 0}, " +
+                    $"source={_provider.LoadedRootPath}, contextSlots={_provider.ContextSlotCount}");
+                return;
+            }
 
             if (!_hasBuiltCache)
                 RebuildCache();
 
+            if (_diagLogged.Add("ready"))
+                LogProviderSummary();
+
             ApplyMonitorTimeline();
+        }
+
+        // One-shot diagnostics: what was loaded and where each timeline monitor ends up
+        private readonly HashSet<string> _diagLogged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        private void LogDiagOnce(string key, string message)
+        {
+            if (_diagLogged.Add(key))
+                Debug.Log(message);
+        }
+
+        private void LogProviderSummary()
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"[Monitor] clips={_provider.clips?.Count ?? 0} source={_provider.LoadedRootPath}");
+            if (_provider.clips != null)
+            {
+                foreach (MonitorUvMovieClipData clip in _provider.clips)
+                {
+                    sb.Append($"\n  clip {clip.folderName}: frames={clip.FrameCount}, textures={clip.frameTextures.Count}, " +
+                              $"metadata={(clip.metadata != null)}, light={(clip.lightTexture != null)}");
+                }
+            }
+
+            sb.Append($"\n  slots={_provider.ContextSlotCount}");
+            if (_provider.contextSlots != null)
+            {
+                foreach (MonitorUvMovieContextSlot slot in _provider.contextSlots)
+                {
+                    sb.Append($"\n  slot {slot.slotId} '{slot.resourceName}': enabled={slot.isEnabledLoad}, " +
+                              $"clip={(slot.clip != null ? slot.clip.folderName : "none")}, by={slot.resolvedBy}, standard={slot.useStandardMode}");
+                }
+            }
+
+            sb.Append($"\n  bindings={_bindings.Count}");
+            foreach (MonitorMaterialBinding binding in _bindings)
+                sb.Append($"\n  binding {binding.renderer.name} / {binding.material.name} [{binding.material.shader?.name}] group={binding.groupKey}");
+
+            Debug.Log(sb.ToString());
         }
 
         private void BindIfPossible()
@@ -444,6 +498,9 @@ namespace Gallop.Live
 
                     if (!TryBuildShaderState(monitorData, curKey, nextKey, currentFrame, out MonitorShaderState state))
                     {
+                        LogDiagOnce($"fail|{bindingName}|{curKey.dispID}",
+                            $"[Monitor] {bindingName} frame {curKey.frame}: no texture for dispID={curKey.dispID} " +
+                            $"(slot {(_provider.TryGetContextSlot(curKey.dispID, out MonitorUvMovieContextSlot diagSlot) ? $"'{diagSlot.resourceName}' clip={(diagSlot.clip != null ? diagSlot.clip.folderName : "none")} enabled={diagSlot.isEnabledLoad}" : "missing")})");
                         if (verboseLog)
                         {
                             Debug.LogWarning(
@@ -475,11 +532,17 @@ namespace Gallop.Live
 
                         if (targets.Count == 0)
                         {
+                            LogDiagOnce($"nobind|{timelineName}", $"[Monitor] {timelineName}: no monitor material matched");
                             if (_missingBindingLogged.Add(timelineName) && verboseLog)
                                 Debug.LogWarning($"[StageMonitorDriver] no monitor material matched timeline '{timelineName}'");
                             continue;
                         }
                     }
+
+                    LogDiagOnce($"hit|{bindingName}|{curKey.dispID}",
+                        $"[Monitor] {bindingName} frame {curKey.frame}: dispID={curKey.dispID} -> " +
+                        $"{(state.main.texture != null ? state.main.texture.name : "null")} image={state.main.imageIndex} " +
+                        $"on {string.Join(", ", targets.ConvertAll(t => $"{t.renderer.name}/{t.material.name}"))}");
 
                     for (int j = 0; j < targets.Count; j++)
                         ApplyShaderState(targets[j], state);
@@ -1059,15 +1122,18 @@ namespace Gallop.Live
             _resolveBuffer.Clear();
             string compact = CompactName(normalized);
 
+            // "MonitorA..F" are the stage's monitor materials in order (MonitorA = monitor000, which several
+            // renderers can share). Matching by letter goes before the substring match, which otherwise ties
+            // "monitorc" to "monitor_center_up" and leaves monitor002 undriven (1054).
             AddMatchesExact(normalized, compact, _resolveBuffer);
-            if (_resolveBuffer.Count == 0)
-                AddMatchesContains(normalized, compact, _resolveBuffer);
+            if (_resolveBuffer.Count == 0 && TryExtractMonitorLetterIndex(normalized, out int letterIndex))
+                AddMatchesByOrdinal(letterIndex, _resolveBuffer);
 
             if (_resolveBuffer.Count == 0 && TryExtractMonitorIndex(normalized, out int numericIndex))
                 AddMatchesByNumericIndex(numericIndex, _resolveBuffer);
 
-            if (_resolveBuffer.Count == 0 && TryExtractMonitorLetterIndex(normalized, out int letterIndex))
-                AddMatchesByOrdinal(letterIndex, _resolveBuffer);
+            if (_resolveBuffer.Count == 0)
+                AddMatchesContains(normalized, compact, _resolveBuffer);
 
             List<MonitorMaterialBinding> resolved = new List<MonitorMaterialBinding>(_resolveBuffer.Count);
             for (int i = 0; i < _resolveBuffer.Count; i++)
@@ -1151,14 +1217,26 @@ namespace Gallop.Live
             if (ordinal < 0 || _bindings.Count == 0)
                 return;
 
+            // Count only numbered monitor materials ("monitor000"...), so other renderers that happen to use a
+            // monitor-like material do not shift the letters
             List<string> groups = new List<string>(_bindings.Count);
             for (int i = 0; i < _bindings.Count; i++)
             {
                 string groupKey = _bindings[i]?.groupKey;
-                if (string.IsNullOrEmpty(groupKey) || groups.Contains(groupKey))
+                if (string.IsNullOrEmpty(groupKey) || groups.Contains(groupKey) || !TryExtractMonitorIndex(groupKey, out _))
                     continue;
 
                 groups.Add(groupKey);
+            }
+
+            if (groups.Count == 0)
+            {
+                for (int i = 0; i < _bindings.Count; i++)
+                {
+                    string groupKey = _bindings[i]?.groupKey;
+                    if (!string.IsNullOrEmpty(groupKey) && !groups.Contains(groupKey))
+                        groups.Add(groupKey);
+                }
             }
 
             groups.Sort(StringComparer.OrdinalIgnoreCase);
